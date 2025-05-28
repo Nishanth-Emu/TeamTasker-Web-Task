@@ -1,13 +1,13 @@
 import express, { Application, Request, Response } from 'express';
-import healthRoutes from './routes/health.routes'
+import healthRoutes from './routes/health.routes';
 import sequelize from './config/database';
+import User from './models/User';
 
 const app: Application = express();
-const PORT = 5000;
+const PORT: number = process.env.PORT ? parseInt(process.env.PORT as string, 10) : 5000;
 
 app.use(express.json());
 
-// Basic route
 app.get('/', (req: Request, res: Response) => {
   res.send('TeamTasker Backend is running!');
 });
@@ -19,13 +19,20 @@ const startServer = async () => {
     await sequelize.authenticate();
     console.log('Database connection has been established successfully.');
 
+    // Explicitly sync the User model
+    await User.sync({ alter: true });
+    console.log('User model synchronized successfully.');
+
+    // Or sync all models
+    await sequelize.sync({ alter: true });
+    console.log('All models were synchronized successfully.');
+
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
-      console.log('Press CTRL+C to stop');
     });
   } catch (error) {
-    console.error('Unable to connect to the database:', error);
-    process.exit(1); // Exit process if DB connection fails
+    console.error('Error:', error);
+    process.exit(1);
   }
 };
 
