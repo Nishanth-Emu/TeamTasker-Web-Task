@@ -1,5 +1,6 @@
 import express, { Application, Request, Response } from 'express';
 import healthRoutes from './routes/health.routes';
+import authRoutes from './routes/auth.routes';
 import sequelize from './config/database';
 import User from './models/User';
 
@@ -14,6 +15,8 @@ app.get('/', (req: Request, res: Response) => {
 
 app.use('/api/health', healthRoutes);
 
+app.use('/api/auth', authRoutes);
+
 const startServer = async () => {
   try {
     await sequelize.authenticate();
@@ -23,7 +26,7 @@ const startServer = async () => {
     await User.sync({ alter: true });
     console.log('User model synchronized successfully.');
 
-    // Or sync all models
+    // sync all models
     await sequelize.sync({ alter: true });
     console.log('All models were synchronized successfully.');
 
