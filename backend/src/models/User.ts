@@ -26,7 +26,7 @@ class User extends Model<UserAttributes, UserCreationAttributes> implements User
   public readonly updatedAt!: Date;
 }
 
-// Initialize the User model 
+// Initialize the User model  
 User.init(
   {
     id: {

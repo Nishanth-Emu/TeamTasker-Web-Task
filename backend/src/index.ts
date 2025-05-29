@@ -3,9 +3,11 @@ import healthRoutes from './routes/health.routes';
 import authRoutes from './routes/auth.routes';
 import userRoutes from './routes/user.routes';
 import projectRoutes from './routes/project.routes';
+import taskRoutes from './routes/task.routes';
 import sequelize from './config/database';
 import User from './models/User';
 import Project from './models/Project'
+import Task from './models/Task';
 
 const app: Application = express();
 const PORT: number = process.env.PORT ? parseInt(process.env.PORT as string, 10) : 5000;
@@ -21,6 +23,7 @@ app.use('/api/health', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/projects', projectRoutes);
+app.use('/api/tasks', taskRoutes); 
 
 
 const startServer = async () => {
@@ -35,6 +38,10 @@ const startServer = async () => {
     // Sync the Project model
     await Project.sync({ alter: true }); 
     console.log('Project model synchronized successfully.');
+
+    // Sync the Task model
+    await Task.sync({ alter: true });
+    console.log('Task model synchronized successfully.');
 
     // sync all models
     await sequelize.sync({ alter: true });
