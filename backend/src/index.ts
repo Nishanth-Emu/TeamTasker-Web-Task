@@ -1,6 +1,7 @@
 import express, { Application, Request, Response } from 'express';
 import healthRoutes from './routes/health.routes';
 import authRoutes from './routes/auth.routes';
+import userRoutes from './routes/user.routes';
 import sequelize from './config/database';
 import User from './models/User';
 
@@ -13,9 +14,10 @@ app.get('/', (req: Request, res: Response) => {
   res.send('TeamTasker Backend is running!');
 });
 
+// routes
 app.use('/api/health', healthRoutes);
-
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes)
 
 const startServer = async () => {
   try {
