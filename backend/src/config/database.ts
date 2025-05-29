@@ -13,7 +13,7 @@ const sequelize = new Sequelize(dbName, dbUser, dbPassword, {
   host: dbHost,
   port: dbPort,
   dialect: 'postgres',
-  logging: (...msg) => console.log(msg),
+  logging: false,
   pool: {
     max: 5,
     min: 0,

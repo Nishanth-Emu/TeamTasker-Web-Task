@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
 import Task from '../models/Task';
-import Project from '../models/Project'; 
-import User from '../models/User';     
+import Project from '../models/Project';
+import User from '../models/User';
+import { io } from '../index'; 
 
 interface CustomRequest extends Request {
   user?: {
@@ -12,7 +13,9 @@ interface CustomRequest extends Request {
 
 const userAttributes = ['id', 'username', 'email', 'role'];
 
-
+// @route   POST /api/tasks
+// @desc    Create a new task
+// @access  Private (Admin, Project Manager, Developer)
 export const createTask = async (req: CustomRequest, res: Response): Promise<void> => {
   const { title, description, status, priority, deadline, projectId, assignedTo } = req.body;
 
@@ -22,14 +25,12 @@ export const createTask = async (req: CustomRequest, res: Response): Promise<voi
       return;
     }
 
-    // Validate projectId exists
     const project = await Project.findByPk(projectId);
     if (!project) {
       res.status(404).json({ message: 'Project not found.' });
       return;
     }
 
-    // Validate assignedTo user exists if provided
     if (assignedTo) {
       const assignee = await User.findByPk(assignedTo);
       if (!assignee) {
@@ -45,9 +46,24 @@ export const createTask = async (req: CustomRequest, res: Response): Promise<voi
       priority: priority || 'Medium',
       deadline,
       projectId,
-      assignedTo: assignedTo || null, 
-      reportedBy: req.user.id, // Task creator is the authenticated user
+      assignedTo: assignedTo || null,
+      reportedBy: req.user.id,
     });
+
+    // Fetch the task with its associations to emit full data
+    const createdTaskWithAssociations = await Task.findByPk(task.id, {
+        include: [
+            { model: Project, as: 'project', attributes: ['id', 'name', 'status'] },
+            { model: User, as: 'assignee', attributes: userAttributes },
+            { model: User, as: 'reporter', attributes: userAttributes },
+        ],
+    });
+
+    // Emit real-time event
+    if (createdTaskWithAssociations) {
+        io.to(projectId).emit('taskCreated', createdTaskWithAssociations);
+        console.log(`Emitted 'taskCreated' for project ${projectId}`);
+    }
 
     res.status(201).json({ message: 'Task created successfully', task });
   } catch (error) {
@@ -56,7 +72,9 @@ export const createTask = async (req: CustomRequest, res: Response): Promise<voi
   }
 };
 
-
+// @route   GET /api/tasks
+// @desc    Get all tasks (with filters, later)
+// @access  Private (Any authenticated user)
 export const getTasks = async (req: CustomRequest, res: Response): Promise<void> => {
   try {
     const tasks = await Task.findAll({
@@ -74,7 +92,9 @@ export const getTasks = async (req: CustomRequest, res: Response): Promise<void>
   }
 };
 
-
+// @route   GET /api/tasks/:id
+// @desc    Get a single task by ID
+// @access  Private (Any authenticated user)
 export const getTaskById = async (req: CustomRequest, res: Response): Promise<void> => {
   try {
     const task = await Task.findByPk(req.params.id, {
@@ -96,7 +116,9 @@ export const getTaskById = async (req: CustomRequest, res: Response): Promise<vo
   }
 };
 
-
+// @route   PUT /api/tasks/:id
+// @desc    Update a task
+// @access  Private (Admin, Project Manager, Developer, Tester, Reporter, Assignee)
 export const updateTask = async (req: CustomRequest, res: Response): Promise<void> => {
   const { title, description, status, priority, deadline, projectId, assignedTo } = req.body;
   const { id } = req.params;
@@ -113,12 +135,6 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
       return;
     }
 
-    // Complex authorization for updating tasks:
-    // Admin, Project Manager can update anything
-    // Developer can update status, priority, description, assignedTo (if they are assigned)
-    // Tester can update status (if 'Done' or 'Blocked') and add comments (future feature)
-    // Reporter (the one who created task) can update anything but status to 'Done'/'Blocked'
-    // Assignee can update status (to 'In Progress', 'Done', 'Blocked'), priority, description
     const currentUserRole = req.user.role;
     const currentUserId = req.user.id;
 
@@ -126,15 +142,14 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
 
     if (['Admin', 'Project Manager'].includes(currentUserRole)) {
       isAuthorized = true;
-    }
-    else {
+    } else {
       if (currentUserRole === 'Developer' && (task.assignedTo === currentUserId || task.reportedBy === currentUserId)) {
         isAuthorized = true;
       }
       if (currentUserRole === 'Tester' && task.assignedTo === currentUserId) {
         isAuthorized = true;
       }
-      if (task.reportedBy === currentUserId && !isAuthorized) { 
+      if (task.reportedBy === currentUserId && !isAuthorized) {
           if (status && ['Done', 'Blocked'].includes(status)) {
               if (task.reportedBy === currentUserId && task.assignedTo !== currentUserId && !['Developer', 'Tester'].includes(currentUserRole)) {
                   res.status(403).json({ message: 'Reporters cannot mark tasks as Done or Blocked unless they are also the assignee/developer.' });
@@ -143,7 +158,7 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
           }
           isAuthorized = true;
       }
-      if (task.assignedTo === currentUserId && !isAuthorized) { 
+      if (task.assignedTo === currentUserId && !isAuthorized) {
           isAuthorized = true;
       }
     }
@@ -169,6 +184,9 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
       }
     }
 
+    // Store old projectId to emit to the correct room later if projectId changes
+    const oldProjectId = task.projectId;
+
     await task.update({
       title: title !== undefined ? title : task.title,
       description: description !== undefined ? description : task.description,
@@ -179,6 +197,25 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
       assignedTo: assignedTo !== undefined ? assignedTo : task.assignedTo,
     });
 
+    const updatedTaskWithAssociations = await Task.findByPk(task.id, {
+        include: [
+            { model: Project, as: 'project', attributes: ['id', 'name', 'status'] },
+            { model: User, as: 'assignee', attributes: userAttributes },
+            { model: User, as: 'reporter', attributes: userAttributes },
+        ],
+    });
+
+    // Emit real-time event
+    if (updatedTaskWithAssociations) {
+        if (projectId && projectId !== oldProjectId) {
+            io.to(oldProjectId).emit('taskDeleted', { id: task.id, projectId: oldProjectId }); // Treat as deleted from old project
+            io.to(projectId).emit('taskCreated', updatedTaskWithAssociations); // Treat as created in new project
+        } else {
+            io.to(task.projectId).emit('taskUpdated', updatedTaskWithAssociations);
+        }
+        console.log(`Emitted 'taskUpdated' for project ${task.projectId}`);
+    }
+
     res.status(200).json({ message: 'Task updated successfully', task });
   } catch (error) {
     console.error('Error updating task:', error);
@@ -186,7 +223,9 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
   }
 };
 
-
+// @route   DELETE /api/tasks/:id
+// @desc    Delete a task
+// @access  Private (Admin, Project Manager, or Reporter)
 export const deleteTask = async (req: CustomRequest, res: Response): Promise<void> => {
   const { id } = req.params;
 
@@ -202,7 +241,6 @@ export const deleteTask = async (req: CustomRequest, res: Response): Promise<voi
       return;
     }
 
-    // Authorization check: Admin, Project Manager, or the task reporter can delete
     const isAuthorized = ['Admin', 'Project Manager'].includes(req.user.role) || task.reportedBy === req.user.id;
 
     if (!isAuthorized) {
@@ -210,7 +248,13 @@ export const deleteTask = async (req: CustomRequest, res: Response): Promise<voi
       return;
     }
 
+    const projectId = task.projectId; 
+
     await task.destroy();
+
+    io.to(projectId).emit('taskDeleted', { id, projectId });
+    console.log(`Emitted 'taskDeleted' for project ${projectId}`);
+
     res.status(200).json({ message: 'Task deleted successfully.' });
   } catch (error) {
     console.error('Error deleting task:', error);

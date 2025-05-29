@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Socket.IO Test Client</title>
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        #messages { border: 1px solid #ccc; padding: 10px; min-height: 200px; margin-bottom: 10px; overflow-y: scroll; }
+        .message { margin-bottom: 5px; padding: 5px; background-color: #f0f0f0; border-radius: 4px; }
+        .success { color: green; }
+        .info { color: blue; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Socket.IO Test Client</h1>
+    <p>Open your browser's developer console (F12) to see more logs.</p>
+    <p>
+        Enter Project ID to join: <input type="text" id="projectIdInput" value="YOUR_PROJECT_ID_HERE" placeholder="Enter Project ID">
+        <button id="joinButton">Join Project</button>
+        <button id="leaveButton">Leave Project</button>
+    </p>
+    <div id="messages"></div>
+
+    <script>
+        // Replace with your backend URL
+        const socket = io('http://localhost:5000');
+        const messagesDiv = document.getElementById('messages');
+        const projectIdInput = document.getElementById('projectIdInput');
+        const joinButton = document.getElementById('joinButton');
+        const leaveButton = document.getElementById('leaveButton');
+        let currentProjectId = null;
+
+        function appendMessage(text, type = 'info') {
+            const p = document.createElement('p');
+            p.className = `message ${type}`;
+            p.textContent = text;
+            messagesDiv.appendChild(p);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight; // Scroll to bottom
+        }
+
+        socket.on('connect', () => {
+            appendMessage('Connected to Socket.IO server!', 'success');
+            console.log('Socket Connected:', socket.id);
+        });
+
+        socket.on('disconnect', () => {
+            appendMessage('Disconnected from Socket.IO server!', 'error');
+            console.log('Socket Disconnected');
+        });
+
+        socket.on('connect_error', (err) => {
+            appendMessage(`Connection Error: ${err.message}`, 'error');
+            console.error('Socket Connection Error:', err);
+        });
+
+        // Listen for task events
+        socket.on('taskCreated', (task) => {
+            appendMessage(`Task Created: ${task.title} (ID: ${task.id}) in Project: ${task.project.name}`, 'info');
+            console.log('Task Created:', task);
+        });
+
+        socket.on('taskUpdated', (task) => {
+            appendMessage(`Task Updated: ${task.title} (ID: ${task.id}) Status: ${task.status}`, 'info');
+            console.log('Task Updated:', task);
+        });
+
+        socket.on('taskDeleted', (data) => {
+            appendMessage(`Task Deleted: ID ${data.id} from Project ${data.projectId}`, 'info');
+            console.log('Task Deleted:', data);
+        });
+
+        joinButton.addEventListener('click', () => {
+            const projectId = projectIdInput.value.trim();
+            if (projectId) {
+                if (currentProjectId) {
+                    socket.emit('leaveProject', currentProjectId); // Leave previous room if any
+                    appendMessage(`Left project ${currentProjectId}`, 'info');
+                }
+                socket.emit('joinProject', projectId);
+                currentProjectId = projectId;
+                appendMessage(`Attempting to join project: ${projectId}`, 'success');
+            } else {
+                appendMessage('Please enter a Project ID.', 'error');
+            }
+        });
+
+        leaveButton.addEventListener('click', () => {
+            if (currentProjectId) {
+                socket.emit('leaveProject', currentProjectId);
+                appendMessage(`Left project: ${currentProjectId}`, 'info');
+                currentProjectId = null;
+            } else {
+                appendMessage('Not currently in a project room.', 'info');
+            }
+        });
+
+        // Auto-join a project if ID is pre-filled on load
+        window.onload = () => {
+            const initialProjectId = projectIdInput.value.trim();
+            if (initialProjectId && initialProjectId !== "YOUR_PROJECT_ID_HERE") {
+                joinButton.click();
+            }
+        };
+
+    </script>
+</body>
+</html>
