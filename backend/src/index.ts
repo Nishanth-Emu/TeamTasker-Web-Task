@@ -4,6 +4,7 @@ import authRoutes from './routes/auth.routes';
 import userRoutes from './routes/user.routes';
 import sequelize from './config/database';
 import User from './models/User';
+import Project from './models/Project'
 
 const app: Application = express();
 const PORT: number = process.env.PORT ? parseInt(process.env.PORT as string, 10) : 5000;
@@ -27,6 +28,10 @@ const startServer = async () => {
     // Explicitly sync the User model
     await User.sync({ alter: true });
     console.log('User model synchronized successfully.');
+    
+    // Sync the Project model
+    await Project.sync({ alter: true }); 
+    console.log('Project model synchronized successfully.');
 
     // sync all models
     await sequelize.sync({ alter: true });
