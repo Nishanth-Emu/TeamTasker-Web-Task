@@ -1,33 +1,41 @@
 # TeamTasker-Web-Task
 
-# Backend Part - Day 2 Progress
-
-## 📅 Day 2 - Initial Setup
+## 📅 Day 3 - Backend Development & Feature Expansion
 
 ### ✅ What I Did Today
 
+- 🧑‍💼 **Role-Based User Route**
+  - Implemented and tested user routes with **role-based access control (RBAC)**.
+  - Confirmed working and secure via testing.
 
-- Created schema for PostgreSQL using Sequelize ORM.
-- Faced an error during migration to PostgreSQL, resolved it by explicitly syncing the `User` schema:
-  ```ts
-  await User.sync({ alter: true });
-  console.log('User model synchronized successfully.');
-   ```
-- Created register and login routes.
-- Tested both routes using Thunder Client — confirmed working correctly.
-- Implemented JWT-based authentication for securing APIs.
+- 🗃️ **Project Schema**
+  - Created the **Project** and **Task** schema using Sequelize.
+  - Table successfully created in PostgreSQL.
+
+- 🔄 **Project Routes + CRUD**
+  - Added full **CRUD operations** for managing projects.
+  - Routes tested and functioning properly.
+
+- 📦 **Task Routes**
+  - Created API routes for **Tasks** under Projects.
+  - Successfully tested via Thunder Client.
+
+- 🔌 **Socket Testing (Preparation for Real-Time Features)**
+  - Started testing WebSocket setup for future real-time task updates.
 
 ### 🛠️ Tech Stack
 
 - **Node.js**
 - **Express.js**
-- **JWT**
+- **TypeScript**
 - **PostgreSQL**
 - **Sequelize (ORM)**
+- **JWT (Authentication)**
+- **WebSockets (Socket.IO - testing phase)**
 
 ### 🚀 How to Run the Project
 
 1. **Clone the repository**
    ```bash
    git clone <repo-url>
-   cd <your-project-directory>
+   cd <project-directory>
