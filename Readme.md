@@ -1,41 +1,45 @@
 # TeamTasker-Web-Task
 
-## 📅 Day 3 - Backend Development & Feature Expansion
+## 📅 Day 4 - Frontend Setup & Backend Completion
 
 ### ✅ What I Did Today
 
-- 🧑‍💼 **Role-Based User Route**
-  - Implemented and tested user routes with **role-based access control (RBAC)**.
-  - Confirmed working and secure via testing.
+- 🧾 **Login and Register Forms**
+  - Designed and implemented **login** and **register** forms on the frontend.
+  - Connected them to backend API endpoints for seamless authentication.
 
-- 🗃️ **Project Schema**
-  - Created the **Project** and **Task** schema using Sequelize.
-  - Table successfully created in PostgreSQL.
+- 🧱 **Frontend Setup**
+  - Initialized the frontend project (**Vite**).
+  - Set up folder structure and started styling the auth pages.
 
-- 🔄 **Project Routes + CRUD**
-  - Added full **CRUD operations** for managing projects.
-  - Routes tested and functioning properly.
+- 🧠 **Backend Completed**
+  - Finalized backend logic for:
+    - **Authentication**
+    - **Role-based access**
+    - **CRUD operations for projects and tasks**
+    - **WebSocket testing**
+  - Cleaned up API structure and ensured all major routes are functioning.
 
-- 📦 **Task Routes**
-  - Created API routes for **Tasks** under Projects.
-  - Successfully tested via Thunder Client.
-
-- 🔌 **Socket Testing (Preparation for Real-Time Features)**
-  - Started testing WebSocket setup for future real-time task updates.
+- 🧊 **Redis Integration**
+  - Integrated **Redis** for caching or session management.
+  - Successfully configured Redis and confirmed connection.
+  - Improved performance and state handling.
 
 ### 🛠️ Tech Stack
 
-- **Node.js**
-- **Express.js**
-- **TypeScript**
-- **PostgreSQL**
-- **Sequelize (ORM)**
-- **JWT (Authentication)**
-- **WebSockets (Socket.IO - testing phase)**
+**Backend:**
+- Node.js
+- Express.js
+- TypeScript
+- PostgreSQL
+- Sequelize (ORM)
+- JWT Authentication
+- Redis (Cache/Session)
+- Socket.IO (WebSocket)
 
-### 🚀 How to Run the Project
+**Frontend:**
+- Vite with React
+- TypeScript
+- TailwindCSS
 
-1. **Clone the repository**
-   ```bash
-   git clone <repo-url>
-   cd <project-directory>
+
