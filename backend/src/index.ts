@@ -84,10 +84,6 @@ const startServer = async () => {
     await sequelize.sync({ alter: true });
     console.log('All models were synchronized successfully.');
 
-    app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
-    });
-
     httpServer.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
       console.log(`Socket.IO is listening on port ${PORT}`);

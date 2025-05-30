@@ -2,7 +2,8 @@ import { Request, Response } from 'express';
 import Task from '../models/Task';
 import Project from '../models/Project';
 import User from '../models/User';
-import { io } from '../index'; 
+import { io } from '../index';
+import { redisClient, REDIS_CACHE_TTL } from '../config/redis';
 
 interface CustomRequest extends Request {
   user?: {
@@ -12,6 +13,9 @@ interface CustomRequest extends Request {
 }
 
 const userAttributes = ['id', 'username', 'email', 'role'];
+
+const getTasksCacheKey = (projectId?: string) => projectId ? `projectTasks:${projectId}` : 'allTasks';
+
 
 // @route   POST /api/tasks
 // @desc    Create a new task
@@ -50,7 +54,12 @@ export const createTask = async (req: CustomRequest, res: Response): Promise<voi
       reportedBy: req.user.id,
     });
 
-    // Fetch the task with its associations to emit full data
+    // Invalidate the cache for all tasks and for the specific project's tasks
+    await redisClient.del(getTasksCacheKey());
+    await redisClient.del(getTasksCacheKey(projectId)); // Invalidate cache for tasks in this project
+    console.log(`Invalidated all tasks cache and project ${projectId} tasks cache.`);
+
+
     const createdTaskWithAssociations = await Task.findByPk(task.id, {
         include: [
             { model: Project, as: 'project', attributes: ['id', 'name', 'status'] },
@@ -59,7 +68,6 @@ export const createTask = async (req: CustomRequest, res: Response): Promise<voi
         ],
     });
 
-    // Emit real-time event
     if (createdTaskWithAssociations) {
         io.to(projectId).emit('taskCreated', createdTaskWithAssociations);
         console.log(`Emitted 'taskCreated' for project ${projectId}`);
@@ -72,11 +80,21 @@ export const createTask = async (req: CustomRequest, res: Response): Promise<voi
   }
 };
 
+
 // @route   GET /api/tasks
-// @desc    Get all tasks (with filters, later)
+// @desc    Get all tasks (with caching)
 // @access  Private (Any authenticated user)
 export const getTasks = async (req: CustomRequest, res: Response): Promise<void> => {
+  const cacheKey = getTasksCacheKey(); 
+
   try {
+    const cachedTasks = await redisClient.get(cacheKey);
+    if (cachedTasks) {
+      console.log('Serving tasks from Redis cache.');
+      res.status(200).json(JSON.parse(cachedTasks));
+      return;
+    }
+
     const tasks = await Task.findAll({
       include: [
         { model: Project, as: 'project', attributes: ['id', 'name', 'status'] },
@@ -85,12 +103,17 @@ export const getTasks = async (req: CustomRequest, res: Response): Promise<void>
       ],
       order: [['createdAt', 'DESC']],
     });
+
+    await redisClient.setex(cacheKey, REDIS_CACHE_TTL, JSON.stringify(tasks));
+    console.log('Tasks fetched from DB and cached.');
+
     res.status(200).json(tasks);
   } catch (error) {
     console.error('Error fetching tasks:', error);
     res.status(500).json({ message: 'Server error fetching tasks.' });
   }
 };
+
 
 // @route   GET /api/tasks/:id
 // @desc    Get a single task by ID
@@ -139,7 +162,6 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
     const currentUserId = req.user.id;
 
     let isAuthorized = false;
-
     if (['Admin', 'Project Manager'].includes(currentUserRole)) {
       isAuthorized = true;
     } else {
@@ -184,8 +206,7 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
       }
     }
 
-    // Store old projectId to emit to the correct room later if projectId changes
-    const oldProjectId = task.projectId;
+    const oldProjectId = task.projectId; // Capture old project ID for cache invalidation and Socket.IO
 
     await task.update({
       title: title !== undefined ? title : task.title,
@@ -197,6 +218,17 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
       assignedTo: assignedTo !== undefined ? assignedTo : task.assignedTo,
     });
 
+    // Invalidate the cache for all tasks
+    await redisClient.del(getTasksCacheKey());
+    // Invalidate cache for the old project's tasks (if projectId changed)
+    await redisClient.del(getTasksCacheKey(oldProjectId));
+    // Invalidate cache for the new project's tasks (if projectId changed)
+    if (projectId && projectId !== oldProjectId) {
+        await redisClient.del(getTasksCacheKey(projectId));
+    }
+    console.log(`Invalidated all tasks cache and relevant project tasks caches.`);
+
+
     const updatedTaskWithAssociations = await Task.findByPk(task.id, {
         include: [
             { model: Project, as: 'project', attributes: ['id', 'name', 'status'] },
@@ -205,11 +237,10 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
         ],
     });
 
-    // Emit real-time event
     if (updatedTaskWithAssociations) {
         if (projectId && projectId !== oldProjectId) {
-            io.to(oldProjectId).emit('taskDeleted', { id: task.id, projectId: oldProjectId }); // Treat as deleted from old project
-            io.to(projectId).emit('taskCreated', updatedTaskWithAssociations); // Treat as created in new project
+            io.to(oldProjectId).emit('taskDeleted', { id: task.id, projectId: oldProjectId });
+            io.to(projectId).emit('taskCreated', updatedTaskWithAssociations);
         } else {
             io.to(task.projectId).emit('taskUpdated', updatedTaskWithAssociations);
         }
@@ -248,9 +279,14 @@ export const deleteTask = async (req: CustomRequest, res: Response): Promise<voi
       return;
     }
 
-    const projectId = task.projectId; 
+    const projectId = task.projectId; // Get projectId before deleting
 
     await task.destroy();
+
+    // Invalidate the cache for all tasks and for the specific project's tasks
+    await redisClient.del(getTasksCacheKey());
+    await redisClient.del(getTasksCacheKey(projectId));
+    console.log(`Invalidated all tasks cache and project ${projectId} tasks cache.`);
 
     io.to(projectId).emit('taskDeleted', { id, projectId });
     console.log(`Emitted 'taskDeleted' for project ${projectId}`);

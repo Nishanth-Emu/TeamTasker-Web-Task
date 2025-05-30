@@ -1,0 +1,34 @@
+{
+  "title": "Implement user authentication",
+  "description": "Develop and test the JWT-based authentication system.",
+  "status": "To Do",
+  "priority": "High",
+  "deadline": "2025-06-15T23:59:59Z",
+  "projectId": "YOUR_PROJECT_ID",
+  "assignedTo": "YOUR_ASSIGNEE_USER_ID"
+}
+
+
+
+{
+    "name": "QuickShop API Integration",
+    "description": "Implementing and testing API endpoints for the QuickShop e-commerce platform.",
+    "status": "In Progress"
+}
+
+
+{
+  "email": "user1@user1.com",
+  "password": "user1"
+}
+
+{
+  "email": "dev@dev.com",
+  "password": "dev"
+}
+
+{
+  "email": "admin@admin.com",
+  "password": "admin"
+}
+
