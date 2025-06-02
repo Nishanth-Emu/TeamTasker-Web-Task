@@ -1,10 +1,4 @@
-
----
-
-```markdown
 # 🧑‍💻 TeamTasker-Web-Task
-
----
 
 ## 📅 Day 5 – Frontend Progress Update
 
