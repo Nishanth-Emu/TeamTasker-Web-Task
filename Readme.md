@@ -1,45 +1,128 @@
-# TeamTasker-Web-Task
 
-## 📅 Day 4 - Frontend Setup & Backend Completion
+---
 
-### ✅ What I Did Today
+```markdown
+# 🧑‍💻 TeamTasker-Web-Task
 
-- 🧾 **Login and Register Forms**
-  - Designed and implemented **login** and **register** forms on the frontend.
-  - Connected them to backend API endpoints for seamless authentication.
+---
 
-- 🧱 **Frontend Setup**
-  - Initialized the frontend project (**Vite**).
-  - Set up folder structure and started styling the auth pages.
+## 📅 Day 5 – Frontend Progress Update
 
-- 🧠 **Backend Completed**
-  - Finalized backend logic for:
-    - **Authentication**
-    - **Role-based access**
-    - **CRUD operations for projects and tasks**
-    - **WebSocket testing**
-  - Cleaned up API structure and ensured all major routes are functioning.
+### ✅ What’s Done Today
 
-- 🧊 **Redis Integration**
-  - Integrated **Redis** for caching or session management.
-  - Successfully configured Redis and confirmed connection.
-  - Improved performance and state handling.
+- 📝 **Task Module Fixed**
+  - Addressed critical bugs in both backend and frontend.
+  - Implemented live real-time updates using **Socket.IO** for better collaboration.
+  
+- 📤 **Task & Project Forms**
+  - Created dynamic forms for task and project creation on the frontend.
+  - Integrated with backend APIs.
 
-### 🛠️ Tech Stack
+- 🧪 **Frontend Enhancements**
+  - Built a **sample dashboard** to display project and task data.
+  - Improved UI consistency and data flow between components.
 
-**Backend:**
-- Node.js
-- Express.js
-- TypeScript
-- PostgreSQL
-- Sequelize (ORM)
-- JWT Authentication
-- Redis (Cache/Session)
-- Socket.IO (WebSocket)
 
-**Frontend:**
-- Vite with React
-- TypeScript
-- TailwindCSS
+---
+
+## 📁 Project Structure
+
+```
+
+TeamTasker-Web-Task/
+├── backend/       # Node.js, Express, PostgreSQL, Redis, Socket.IO
+└── frontend/      # Vite + React (TypeScript)
+
+````
+
+---
+
+## 🚀 Getting Started
+
+### 🛠 Backend Setup
+
+1. Navigate to the backend folder:
+   ```bash
+   cd backend
+````
+
+2. Install dependencies:
+
+   ```bash
+   npm install
+   ```
+
+3. Create a `.env` file with the following contents:
+
+   ```env
+   DB_NAME=postgres
+   DB_USER=postgres
+   DB_PASSWORD=root
+   DB_HOST=localhost
+   DB_PORT=5432
+
+   PORT=5000
+
+   JWT_SECRET=b5056ee36290d96b53695296a45e20be09728467d0fd7d57e81786139786f2e9
+   JWT_EXPIRES_IN=1h 
+
+   REDIS_HOST=127.0.0.1
+   REDIS_PORT=6379
+   REDIS_PASSWORD=
+   REDIS_CACHE_TTL=3600
+   ```
+
+4. Start the backend server:
+
+   ```bash
+   npm run dev
+   ```
+
+---
+
+### 🎨 Frontend Setup
+
+1. Navigate to the frontend folder:
+
+   ```bash
+   cd frontend
+   ```
+
+2. Install dependencies:
+
+   ```bash
+   npm install
+   ```
+
+3. Create a `.env` file with the following:
+
+   ```env
+   VITE_API_BASE_URL=http://localhost:5000/api
+   ```
+
+4. Run the frontend:
+
+   ```bash
+   npm run dev
+   ```
+
+---
+
+## ⚙️ Tech Stack
+
+### Backend
+
+* Node.js + Express
+* TypeScript
+* PostgreSQL + Sequelize ORM
+* JWT for Authentication
+* Redis for caching
+* Socket.IO for real-time updates
+
+### Frontend
+
+* Vite + React
+* TypeScript
+* Tailwind CSS
 
 
