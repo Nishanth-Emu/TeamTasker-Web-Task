@@ -17,6 +17,15 @@
 }
 
 
+
+{
+  "username": "dev",
+  "email": "dev@dev.com",
+  "password": "devdev",
+  "role": "Developer"
+}
+
+
 {
   "email": "user1@user1.com",
   "password": "user1"
