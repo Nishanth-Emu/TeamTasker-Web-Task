@@ -83,10 +83,10 @@ export const createTask = async (req: CustomRequest, res: Response): Promise<voi
 // @desc    Get all tasks or tasks for a specific project (with caching)
 // @access  Private (Any authenticated user)
 export const getTasks = async (req: CustomRequest, res: Response): Promise<void> => {
-  const { projectId } = req.query; // <--- ADDED: Get projectId from query params
+  const { projectId } = req.query; 
 
   // Use the projectId to generate a specific cache key
-  const cacheKey = getTasksCacheKey(projectId as string); // <--- MODIFIED: Use projectId for cache key
+  const cacheKey = getTasksCacheKey(projectId as string); 
 
   try {
     const cachedTasks = await redisClient.get(cacheKey);
@@ -105,7 +105,7 @@ export const getTasks = async (req: CustomRequest, res: Response): Promise<void>
     }
 
     const tasks = await Task.findAll({
-      where: whereClause, // <--- MODIFIED: Apply the where clause to filter tasks
+      where: whereClause, 
       include: [
         { model: Project, as: 'project', attributes: ['id', 'name', 'status'] },
         { model: User, as: 'assignee', attributes: userAttributes },
@@ -230,7 +230,7 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
 
     // Invalidate the cache for all tasks
     await redisClient.del(getTasksCacheKey());
-    // Invalidate cache for the old project's tasks (if projectId changed)
+    // Invalidate cache for the old project's tasks
     await redisClient.del(getTasksCacheKey(oldProjectId));
     // Invalidate cache for the new project's tasks (if projectId changed)
     if (projectId && projectId !== oldProjectId) {
@@ -248,13 +248,16 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
     });
 
     if (updatedTaskWithAssociations) {
+        // Always emit 'taskUpdated' to the NEW project's room
+        io.to(updatedTaskWithAssociations.projectId).emit('taskUpdated', updatedTaskWithAssociations);
+        console.log(`Emitted 'taskUpdated' to new project room: ${updatedTaskWithAssociations.projectId}`);
+
+        // If the project ID changed, also notify the OLD project's room
+        // This allows the old project's frontend to remove the task from its list
         if (projectId && projectId !== oldProjectId) {
-            io.to(oldProjectId).emit('taskDeleted', { id: task.id, projectId: oldProjectId });
-            io.to(projectId).emit('taskCreated', updatedTaskWithAssociations);
-        } else {
-            io.to(task.projectId).emit('taskUpdated', updatedTaskWithAssociations);
+            io.to(oldProjectId).emit('taskUpdated', updatedTaskWithAssociations); // Send the *updated* task to the old room
+            console.log(`Emitted 'taskUpdated' to old project room (for removal): ${oldProjectId}`);
         }
-        console.log(`Emitted 'taskUpdated' for project ${task.projectId}`);
     }
 
     res.status(200).json({ message: 'Task updated successfully', task });
