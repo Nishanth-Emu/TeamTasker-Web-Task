@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'; // Import useMutation
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 import { io } from 'socket.io-client';
@@ -36,6 +36,8 @@ interface Task {
   reporter?: { id: string; username: string; email: string; role: string; };
 }
 
+// Ensure this URL is correct and points to your backend's base URL
+// It typically replaces '/api' with an empty string if your Socket.IO is served from root.
 const socket = io(import.meta.env.VITE_API_BASE_URL.replace('/api', ''));
 
 const ProjectDetailPage: React.FC = () => {
@@ -43,8 +45,8 @@ const ProjectDetailPage: React.FC = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
-  const [isEditTaskModalOpen, setIsEditTaskModalOpen] = useState(false); // State for edit modal
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null); // State for task to edit
+  const [isEditTaskModalOpen, setIsEditTaskModalOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   // Fetch project details
   const { data: project, isLoading: isProjectLoading, isError: isProjectError, error: projectError } = useQuery<Project, Error>({
@@ -68,42 +70,76 @@ const ProjectDetailPage: React.FC = () => {
     enabled: !!projectId,
   });
 
-  // Socket.IO for real-time task updates (no change, but ensure it's here)
+  // Socket.IO for real-time task updates
   useEffect(() => {
     if (!projectId) return;
 
-    socket.emit('joinRoom', projectId);
+    // Join the project-specific room
+    socket.emit('joinProject', projectId);
 
+    // Listener for 'taskCreated' events
     socket.on('taskCreated', (newTask: Task) => {
       console.log('Real-time: Task Created', newTask);
       if (newTask.projectId === projectId) {
-        queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+        queryClient.setQueryData<Task[]>(['tasks', projectId], (oldTasks) => {
+          // Add the new task if it's not already there and belongs to this project
+          const exists = oldTasks?.some(task => task.id === newTask.id);
+          return oldTasks ? (exists ? oldTasks : [...oldTasks, newTask]) : [newTask];
+        });
       }
     });
 
+    // Listener for 'taskUpdated' events
     socket.on('taskUpdated', (updatedTask: Task) => {
       console.log('Real-time: Task Updated', updatedTask);
-      // Invalidate for both old and new project's tasks if project changed
-      if (updatedTask.projectId !== projectId) { // Check if task was moved *from* this project
-         queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+      const currentProjectTasksKey = ['tasks', projectId];
+
+      // If the updated task now belongs to the CURRENT project
+      if (updatedTask.projectId === projectId) {
+        queryClient.setQueryData<Task[]>(currentProjectTasksKey, (oldTasks) => {
+          if (!oldTasks) return [updatedTask]; // Handle undefined/null case
+          
+          const exists = oldTasks.some(task => task.id === updatedTask.id);
+          if (exists) {
+            // Update existing task
+            return oldTasks.map(task => task.id === updatedTask.id ? updatedTask : task);
+          } else {
+            // Add new task if it somehow wasn't there (e.g., moved into this project)
+            return [...oldTasks, updatedTask];
+          }
+        });
+      } else {
+        // If the updated task *does not* belong to the current project, remove it
+        // This handles cases where a task was moved *out* of the current project
+        queryClient.setQueryData<Task[]>(currentProjectTasksKey, (oldTasks) => {
+          return oldTasks?.filter(task => task.id !== updatedTask.id) || [];
+        });
       }
-      queryClient.invalidateQueries({ queryKey: ['tasks', updatedTask.projectId] }); // Invalidate for the project the task now belongs to
+      // Invalidate the cache for the project the task *now* belongs to.
+      // This is a fallback to ensure consistency, especially if another client
+      // isn't actively using setQueryData on that specific query key.
+      queryClient.invalidateQueries({ queryKey: ['tasks', updatedTask.projectId] });
     });
 
+
+    // Listener for 'taskDeleted' events
     socket.on('taskDeleted', (deletedTask: { id: string; projectId: string }) => {
       console.log('Real-time: Task Deleted', deletedTask.id);
       if (deletedTask.projectId === projectId) {
-        queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+        queryClient.setQueryData<Task[]>(['tasks', projectId], (oldTasks) => {
+          return oldTasks?.filter(task => task.id !== deletedTask.id) || [];
+        });
       }
     });
 
+    // Clean up on component unmount or projectId change
     return () => {
-      socket.emit('leaveRoom', projectId);
+      socket.emit('leaveProject', projectId);
       socket.off('taskCreated');
       socket.off('taskUpdated');
       socket.off('taskDeleted');
     };
-  }, [projectId, queryClient]);
+  }, [projectId, queryClient]); // Re-run effect if projectId or queryClient instance changes
 
   // Mutation for deleting a task
   const deleteTaskMutation = useMutation({
@@ -111,7 +147,9 @@ const ProjectDetailPage: React.FC = () => {
       await api.delete(`/tasks/${taskId}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] }); // Refetch tasks after deletion
+      // The Socket.IO 'taskDeleted' listener will handle the cache update.
+      // This invalidate here is a fallback for robustness.
+      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
     },
     onError: (error: any) => {
       console.error('Delete task error:', error);
@@ -138,7 +176,6 @@ const ProjectDetailPage: React.FC = () => {
     ['Admin', 'Project Manager'].includes(user.role) || // Admins/PMs can delete any task
     (task.reportedBy === user.id) // Users can delete tasks they reported
   );
-
 
   if (isProjectLoading || isTasksLoading) return <div className="text-center text-lg">Loading project and tasks...</div>;
   if (isProjectError) return <div className="text-center text-lg text-red-600">Error loading project: {projectError?.message}</div>;
