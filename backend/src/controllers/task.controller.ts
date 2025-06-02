@@ -16,7 +16,6 @@ const userAttributes = ['id', 'username', 'email', 'role'];
 
 const getTasksCacheKey = (projectId?: string) => projectId ? `projectTasks:${projectId}` : 'allTasks';
 
-
 // @route   POST /api/tasks
 // @desc    Create a new task
 // @access  Private (Admin, Project Manager, Developer)
@@ -55,10 +54,9 @@ export const createTask = async (req: CustomRequest, res: Response): Promise<voi
     });
 
     // Invalidate the cache for all tasks and for the specific project's tasks
-    await redisClient.del(getTasksCacheKey());
+    await redisClient.del(getTasksCacheKey()); // Invalidate general tasks cache
     await redisClient.del(getTasksCacheKey(projectId)); // Invalidate cache for tasks in this project
     console.log(`Invalidated all tasks cache and project ${projectId} tasks cache.`);
-
 
     const createdTaskWithAssociations = await Task.findByPk(task.id, {
         include: [
@@ -82,20 +80,32 @@ export const createTask = async (req: CustomRequest, res: Response): Promise<voi
 
 
 // @route   GET /api/tasks
-// @desc    Get all tasks (with caching)
+// @desc    Get all tasks or tasks for a specific project (with caching)
 // @access  Private (Any authenticated user)
 export const getTasks = async (req: CustomRequest, res: Response): Promise<void> => {
-  const cacheKey = getTasksCacheKey(); 
+  const { projectId } = req.query; // <--- ADDED: Get projectId from query params
+
+  // Use the projectId to generate a specific cache key
+  const cacheKey = getTasksCacheKey(projectId as string); // <--- MODIFIED: Use projectId for cache key
 
   try {
     const cachedTasks = await redisClient.get(cacheKey);
     if (cachedTasks) {
-      console.log('Serving tasks from Redis cache.');
+      console.log(`Serving tasks for ${projectId ? `project ${projectId}` : 'all tasks'} from Redis cache.`);
       res.status(200).json(JSON.parse(cachedTasks));
       return;
     }
 
+    // Define a where clause object
+    const whereClause: { projectId?: string } = {};
+
+    // If projectId is provided in the query, add it to the where clause
+    if (projectId) {
+      whereClause.projectId = projectId as string;
+    }
+
     const tasks = await Task.findAll({
+      where: whereClause, // <--- MODIFIED: Apply the where clause to filter tasks
       include: [
         { model: Project, as: 'project', attributes: ['id', 'name', 'status'] },
         { model: User, as: 'assignee', attributes: userAttributes },
@@ -105,7 +115,7 @@ export const getTasks = async (req: CustomRequest, res: Response): Promise<void>
     });
 
     await redisClient.setex(cacheKey, REDIS_CACHE_TTL, JSON.stringify(tasks));
-    console.log('Tasks fetched from DB and cached.');
+    console.log(`Tasks fetched from DB and cached for ${projectId ? `project ${projectId}` : 'all tasks'}.`);
 
     res.status(200).json(tasks);
   } catch (error) {

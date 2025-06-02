@@ -67,7 +67,10 @@ const CreateTaskForm: React.FC<CreateTaskFormProps> = ({ projectId, onClose }) =
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] }); // Invalidate tasks for this project
+      // Correctly invalidates tasks for this specific project
+      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+      // Also invalidate the 'all tasks' cache key in case any view uses it
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
       onClose(); // Close the modal on success
     },
     onError: (error: any) => {
