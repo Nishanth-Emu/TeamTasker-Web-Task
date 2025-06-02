@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { protect, authorize } from '../middleware/auth.middleware'; 
 import User from '../models/User';
+import { Op } from 'sequelize';
 
 interface CustomRequest extends Request {
   user?: {
@@ -29,6 +30,24 @@ router.get('/me', protect, async (req: CustomRequest, res: Response): Promise<vo
   } catch (error) {
     console.error('Error fetching user data:', error);
     res.status(500).json({ message: 'Server error fetching user data.' });
+  }
+});
+
+
+router.get('/', protect, authorize(['Admin', 'Project Manager', 'Developer', 'Tester']), async (req: CustomRequest, res: Response): Promise<void> => {
+  try {
+    const users = await User.findAll({
+      attributes: ['id', 'username'], // Only return id and username
+      where: { // Optional: Filter users by roles that can be assigned tasks
+        role: {
+          [Op.in]: ['Admin', 'Project Manager', 'Developer', 'Tester']
+        }
+      }
+    });
+    res.status(200).json(users);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ message: 'Server error fetching users.' });
   }
 });
 

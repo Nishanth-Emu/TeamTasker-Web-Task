@@ -5,6 +5,7 @@ import RegisterForm from './components/auth/RegisterForm';
 import { useAuth } from './context/AuthContext';
 import DashboardLayout from './components/layout/DashboardLayout'; 
 import ProjectsPage from './pages/ProjectsPage'; 
+import ProjectDetailPage from './pages/ProjectDetailPage';
 
 // Re-declare HomePage if it was removed in previous steps or ensure it's there
 const HomePage = () => (
@@ -37,7 +38,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
 function App() {
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col"> {/* Adjust App container for full height */}
+    <div className="min-h-screen bg-gray-100 flex flex-col">
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<LoginForm />} />
@@ -48,14 +49,15 @@ function App() {
           path="/dashboard"
           element={
             <ProtectedRoute>
-              <DashboardLayout /> {/* Use DashboardLayout as the wrapper */}
+              <DashboardLayout />
             </ProtectedRoute>
           }
         >
           {/* Nested routes within the dashboard */}
-          <Route index element={<ProjectsPage />} /> {/* Default route for /dashboard */}
-          <Route path="projects" element={<ProjectsPage />} /> {/* Explicit projects route */}
-          {/* Add more nested routes here (e.g., /dashboard/projects/:projectId/tasks, /dashboard/users) */}
+          <Route index element={<ProjectsPage />} />
+          <Route path="projects" element={<ProjectsPage />} />
+          {/* Add nested route for specific project details and its tasks */}
+          <Route path="projects/:projectId/tasks" element={<ProjectDetailPage />} />
         </Route>
 
         <Route path="*" element={<div className="text-center text-xl font-bold p-10">404 - Page Not Found</div>} />
