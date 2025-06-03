@@ -6,6 +6,7 @@ import { useAuth } from './context/AuthContext';
 import DashboardLayout from './components/layout/DashboardLayout'; 
 import ProjectsPage from './pages/ProjectsPage'; 
 import ProjectDetailPage from './pages/ProjectDetailPage';
+import UsersPage from './pages/UsersPage';
 
 // Re-declare HomePage if it was removed in previous steps or ensure it's there
 const HomePage = () => (
@@ -56,8 +57,8 @@ function App() {
           {/* Nested routes within the dashboard */}
           <Route index element={<ProjectsPage />} />
           <Route path="projects" element={<ProjectsPage />} />
-          {/* Add nested route for specific project details and its tasks */}
           <Route path="projects/:projectId/tasks" element={<ProjectDetailPage />} />
+          <Route path="users" element={<UsersPage />} />
         </Route>
 
         <Route path="*" element={<div className="text-center text-xl font-bold p-10">404 - Page Not Found</div>} />

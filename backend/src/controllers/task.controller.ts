@@ -23,7 +23,7 @@ export const createTask = async (req: CustomRequest, res: Response): Promise<voi
   const { title, description, status, priority, deadline, projectId, assignedTo } = req.body;
 
   try {
-    if (!req.user || !['Admin', 'Project Manager', 'Developer'].includes(req.user.role)) {
+    if (!req.user || !['Admin', 'Project Manager', 'Developer', 'Tester'].includes(req.user.role)) {
       res.status(403).json({ message: 'Not authorized to create tasks.' });
       return;
     }

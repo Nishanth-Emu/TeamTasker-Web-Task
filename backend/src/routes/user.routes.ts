@@ -1,72 +1,44 @@
-import { Router, Request, Response } from 'express';
-import { protect, authorize } from '../middleware/auth.middleware'; 
-import User from '../models/User';
-import { Op } from 'sequelize';
-
-interface CustomRequest extends Request {
-  user?: {
-    id: string;
-    role: 'Admin' | 'Project Manager' | 'Developer' | 'Tester' | 'Viewer';
-  };
-}
+import { Router } from 'express';
+import { protect, authorize } from '../middleware/auth.middleware';
+import {
+  getMe,
+  getAllUsers,
+  getUsersForAssignment,
+  createUser,
+  getUserById,
+  updateUser,
+  deleteUser,
+  getAdminOrPmData,
+  getAdminOnlyData
+} from '../controllers/user.controller'; // Adjust path if necessary
 
 const router = Router();
 
-// Example: A route accessible by any authenticated user
-router.get('/me', protect, async (req: CustomRequest, res: Response): Promise<void>  => {
-  try {
-    if (!req.user || !req.user.id) {
-       res.status(401).json({ message: 'User not authenticated.' });
-       return;
-    }
-    const user = await User.findByPk(req.user.id, {
-      attributes: { exclude: ['passwordHash'] } // Exclude password hash from response
-    });
-    if (!user) {
-       res.status(404).json({ message: 'User not found.' });
-       return;
-    }
-    res.status(200).json(user);
-  } catch (error) {
-    console.error('Error fetching user data:', error);
-    res.status(500).json({ message: 'Server error fetching user data.' });
-  }
-});
+// Get current user profile
+router.get('/me', protect, getMe);
 
+// Get all users with full details (Admin and Project Manager only)
+router.get('/', protect, authorize(['Admin', 'Project Manager']), getAllUsers);
 
-router.get('/', protect, authorize(['Admin', 'Project Manager', 'Developer', 'Tester']), async (req: CustomRequest, res: Response): Promise<void> => {
-  try {
-    const users = await User.findAll({
-      attributes: ['id', 'username'], // Only return id and username
-      where: { // Optional: Filter users by roles that can be assigned tasks
-        role: {
-          [Op.in]: ['Admin', 'Project Manager', 'Developer', 'Tester']
-        }
-      }
-    });
-    res.status(200).json(users);
-  } catch (error) {
-    console.error('Error fetching users:', error);
-    res.status(500).json({ message: 'Server error fetching users.' });
-  }
-});
+// Get users for task assignment (limited info)
+router.get('/', protect, authorize(['Admin', 'Project Manager', 'Developer', 'Tester']), getUsersForAssignment);
+
+// Create new user (Admin only)
+router.post('/', protect, authorize(['Admin']), createUser);
+
+// Get single user by ID (Admin and Project Manager)
+router.get('/:id', protect, authorize(['Admin', 'Project Manager']), getUserById);
+
+// Update user (Admin only, or users can update their own profile)
+router.put('/:id', protect, updateUser);
+
+// Delete user (Admin only)
+router.delete('/:id', protect, authorize(['Admin']), deleteUser);
 
 // Example: A route accessible only by Admin or Project Manager
-router.get('/admin-or-pm-data', protect, authorize(['Admin', 'Project Manager']), (req: CustomRequest, res: Response) => {
-  res.status(200).json({
-    message: `Welcome, ${req.user?.role}! This data is for Admin or Project Managers only.`,
-    userId: req.user?.id,
-    userRole: req.user?.role
-  });
-});
+router.get('/admin-or-pm-data', protect, authorize(['Admin', 'Project Manager']), getAdminOrPmData);
 
 // Example: A route accessible only by Admin
-router.get('/admin-only', protect, authorize(['Admin']), (req: CustomRequest, res: Response) => {
-  res.status(200).json({
-    message: `Hello, Admin! This is highly sensitive admin-only data.`,
-    userId: req.user?.id,
-    userRole: req.user?.role
-  });
-});
+router.get('/admin-only', protect, authorize(['Admin']), getAdminOnlyData);
 
 export default router;

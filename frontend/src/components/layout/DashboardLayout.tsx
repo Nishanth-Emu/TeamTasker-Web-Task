@@ -18,7 +18,10 @@ const DashboardLayout: React.FC = () => {
               </span>
             )}
             <Link to="/dashboard/projects" className="text-gray-600 hover:text-blue-700 font-medium">Projects</Link>
-            {/* Add more nav links here later, e.g., Users, Settings */}
+
+            {user?.role === 'Admin' && (
+                <Link to="/dashboard/users" className="text-gray-600 hover:text-blue-700 font-medium">Users</Link>
+            )}
             <button
               onClick={logout}
               className="px-4 py-2 bg-red-500 text-white text-sm rounded-md hover:bg-red-600 transition-colors"
