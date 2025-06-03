@@ -23,10 +23,10 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
 
-    "baseUrl": ".", // This must be set to the root of your project (frontend directory)
-    "paths": {
-      "@/*": ["./src/*"] // This maps @/ to src/
-    }
+    // "baseUrl": ".", // This must be set to the root of your project (frontend directory)
+    // "paths": {
+    //   "@/*": ["./src/*"] // This maps @/ to src/
+    // }
   },
   "include": ["src"]
 }

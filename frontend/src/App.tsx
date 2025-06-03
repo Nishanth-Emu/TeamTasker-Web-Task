@@ -3,12 +3,14 @@ import './index.css';
 import LoginForm from './components/auth/LoginForm';
 import RegisterForm from './components/auth/RegisterForm';
 import { useAuth } from './context/AuthContext';
-import DashboardLayout from './components/layout/DashboardLayout'; 
-import ProjectsPage from './pages/ProjectsPage'; 
+import DashboardLayout from './components/layout/DashboardLayout';
+import ProjectsPage from './pages/ProjectsPage';
 import ProjectDetailPage from './pages/ProjectDetailPage';
 import UsersPage from './pages/UsersPage';
+import { Toaster } from 'sonner';
+import { NotificationProvider } from './context/NotificationContext';
+// import NotificationToastDisplay from './components/notifications/NotificationToastDisplay';
 
-// Re-declare HomePage if it was removed in previous steps or ensure it's there
 const HomePage = () => (
   <div className="p-8 text-center bg-white rounded-lg shadow-md max-w-sm mx-auto">
     <h2 className="text-3xl font-semibold mb-4">Welcome to TeamTasker!</h2>
@@ -39,31 +41,34 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
 function App() {
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col">
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/login" element={<LoginForm />} />
-        <Route path="/register" element={<RegisterForm />} />
+    <NotificationProvider>
+      <div className="min-h-screen bg-gray-100 flex flex-col">
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/login" element={<LoginForm />} />
+          <Route path="/register" element={<RegisterForm />} />
 
-        {/* Protected Dashboard Routes */}
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }
-        >
-          {/* Nested routes within the dashboard */}
-          <Route index element={<ProjectsPage />} />
-          <Route path="projects" element={<ProjectsPage />} />
-          <Route path="projects/:projectId/tasks" element={<ProjectDetailPage />} />
-          <Route path="users" element={<UsersPage />} />
-        </Route>
+          {/* Protected Dashboard Routes */}
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout />
+              </ProtectedRoute>
+            }
+          >
+            {/* Nested routes within the dashboard */}
+            <Route index element={<ProjectsPage />} />
+            <Route path="projects" element={<ProjectsPage />} />
+            <Route path="projects/:projectId/tasks" element={<ProjectDetailPage />} />
+            <Route path="users" element={<UsersPage />} />
+          </Route>
 
-        <Route path="*" element={<div className="text-center text-xl font-bold p-10">404 - Page Not Found</div>} />
-      </Routes>
-    </div>
+          <Route path="*" element={<div className="text-center text-xl font-bold p-10">404 - Page Not Found</div>} />
+        </Routes>
+      </div>
+      <Toaster richColors position="top-right" />
+    </NotificationProvider>
   );
 }
 
