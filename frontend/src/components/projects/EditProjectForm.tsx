@@ -10,7 +10,7 @@ interface Project {
   id: string;
   name: string;
   description: string;
-  status: 'Not Started' | 'In Progress' | 'Completed' | 'Blocked' | 'On Hold';
+  status: 'Not Started' | 'In Progress' | 'Completed' | 'Cancelled' | 'On Hold';
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -25,7 +25,7 @@ interface EditProjectFormProps {
 const editProjectSchema = z.object({
   name: z.string().min(3, 'Project name must be at least 3 characters').optional(),
   description: z.string().optional(),
-  status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked', 'On Hold']).optional(),
+  status: z.enum(['Not Started', 'In Progress', 'Completed', 'Cancelled', 'On Hold']).optional(),
 });
 
 type EditProjectInputs = z.infer<typeof editProjectSchema>;
@@ -116,7 +116,7 @@ const EditProjectForm: React.FC<EditProjectFormProps> = ({ project, onClose }) =
               <option value="Not Started">Not Started</option>
               <option value="In Progress">In Progress</option>
               <option value="Completed">Completed</option>
-              <option value="Blocked">Blocked</option>
+              <option value="Cancelled">Cancelled</option>
               <option value="On Hold">On Hold</option>
 
             </select>

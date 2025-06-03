@@ -2,7 +2,8 @@ import { Request, Response } from 'express';
 import Project from '../models/Project';
 import User from '../models/User'; 
 import { io } from '../index';
-import { redisClient, REDIS_CACHE_TTL } from '../config/redis'; 
+import { redisClient, REDIS_CACHE_TTL } from '../config/redis';
+import { Op } from 'sequelize';
 
 interface CustomRequest extends Request {
   user?: {
@@ -12,7 +13,104 @@ interface CustomRequest extends Request {
 }
 
 const userAttributes = ['id', 'username', 'email', 'role'];
-const projectListCacheKey = 'allProjects';
+
+// @route   GET /api/projects
+// @desc    Get all projects with filtering, sorting, and search
+// @access  Private (Any authenticated user can view)
+export const getProjects = async (req: CustomRequest, res: Response): Promise<void> => {
+  try {
+    const { status, search, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
+
+    // Create cache key that includes query parameters
+    const cacheKey = `projects:${JSON.stringify({ status, search, sortBy, sortOrder })}`;
+
+    // Try to fetch from cache first
+    const cachedProjects = await redisClient.get(cacheKey);
+    if (cachedProjects) {
+      console.log('Serving filtered projects from Redis cache.');
+      res.status(200).json(JSON.parse(cachedProjects));
+      return;
+    }
+
+    // Build where clause for filtering
+    const whereClause: any = {};
+    
+    // Status filter
+    if (status && status !== 'All') {
+      whereClause.status = status;
+    }
+
+    // Search filter (search in name and description) - PostgreSQL optimized
+    if (search) {
+      const searchTerm = String(search).trim();
+      if (searchTerm) {
+        whereClause[Op.or] = [
+          { name: { [Op.iLike]: `%${searchTerm}%` } },
+          { description: { [Op.iLike]: `%${searchTerm}%` } }
+        ];
+      }
+    }
+
+    // Build order clause for sorting
+    const validSortFields = ['createdAt', 'updatedAt', 'name', 'status'];
+    const validSortOrders = ['asc', 'desc'];
+    
+    const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'createdAt';
+    const order = validSortOrders.includes(sortOrder as string) ? sortOrder as string : 'desc';
+
+    // Special handling for sorting by creator username
+    let orderClause: any;
+    if (sortField === 'creator') {
+      orderClause = [[{ model: User, as: 'creator' }, 'username', order.toUpperCase()]];
+    } else {
+      orderClause = [[sortField, order.toUpperCase()]];
+    }
+
+    // Fetch from database with filters and sorting
+    const projects = await Project.findAll({
+      where: whereClause,
+      include: [{ 
+        model: User, 
+        as: 'creator', 
+        attributes: userAttributes,
+        required: false // LEFT JOIN instead of INNER JOIN
+      }],
+      order: orderClause,
+      // Add these for better PostgreSQL performance
+      logging: process.env.NODE_ENV === 'development' ? console.log : false,
+    });
+
+    // Store in cache for future requests (with shorter TTL for filtered results)
+    const cacheTTL = Object.keys(req.query).length > 0 ? Math.floor(REDIS_CACHE_TTL / 2) : REDIS_CACHE_TTL;
+    await redisClient.setex(cacheKey, cacheTTL, JSON.stringify(projects));
+    console.log('Filtered projects fetched from DB and cached.');
+
+    res.status(200).json(projects);
+  } catch (error) {
+    console.error('Error fetching projects:', error);
+    res.status(500).json({ message: 'Server error fetching projects.' });
+  }
+};
+
+// Update cache invalidation to clear all project-related cache keys
+const invalidateProjectCache = async (): Promise<void> => {
+  try {
+    // PostgreSQL-optimized pattern matching for Redis keys
+    const keys = await redisClient.keys('projects:*');
+    if (keys.length > 0) {
+      // Use pipeline for better performance with multiple deletions
+      const pipeline = redisClient.pipeline();
+      keys.forEach(key => pipeline.del(key));
+      await pipeline.exec();
+      console.log(`Invalidated ${keys.length} project cache keys using pipeline.`);
+    }
+    
+    // Also invalidate the old cache key for backward compatibility
+    await redisClient.del('allProjects');
+  } catch (error) {
+    console.error('Error invalidating project cache:', error);
+  }
+};
 
 // @route   POST /api/projects
 // @desc    Create a new project
@@ -26,21 +124,31 @@ export const createProject = async (req: CustomRequest, res: Response): Promise<
       return;
     }
 
+    // Input validation
+    if (!name || name.trim().length === 0) {
+      res.status(400).json({ message: 'Project name is required.' });
+      return;
+    }
+
     const project = await Project.create({
-      name,
-      description,
+      name: name.trim(),
+      description: description?.trim() || '',
       status: status || 'Not Started',
       createdBy: req.user.id,
     });
 
-    // Invalidate the cache for all projects after creation
-    await redisClient.del(projectListCacheKey);
-    console.log('Invalidated project list cache.');
+    // Fetch the created project with creator info for consistent response
+    const createdProject = await Project.findByPk(project.id, {
+      include: [{ model: User, as: 'creator', attributes: userAttributes }]
+    });
+
+    // Invalidate all project-related cache
+    await invalidateProjectCache();
 
     // Emit real-time event
-    io.emit('projectCreated', project); // Emitting globally or to relevant users later
+    io.emit('projectCreated', createdProject);
 
-    res.status(201).json({ message: 'Project created successfully', project });
+    res.status(201).json({ message: 'Project created successfully', project: createdProject });
   } catch (error) {
     console.error('Error creating project:', error);
     if (error instanceof Error && error.name === 'SequelizeUniqueConstraintError') {
@@ -50,55 +158,6 @@ export const createProject = async (req: CustomRequest, res: Response): Promise<
     }
   }
 };
-
-// @route   GET /api/projects
-// @desc    Get all projects (with caching)
-// @access  Private (Any authenticated user can view)
-export const getProjects = async (req: CustomRequest, res: Response): Promise<void> => {
-  try {
-    // Try to fetch from cache first
-    const cachedProjects = await redisClient.get(projectListCacheKey);
-    if (cachedProjects) {
-      console.log('Serving projects from Redis cache.');
-      res.status(200).json(JSON.parse(cachedProjects));
-      return;
-    }
-
-    // If not in cache, fetch from database
-    const projects = await Project.findAll({
-      include: [{ model: User, as: 'creator', attributes: userAttributes }],
-      order: [['createdAt', 'DESC']]
-    });
-
-    // Store in cache for future requests
-    await redisClient.setex(projectListCacheKey, REDIS_CACHE_TTL, JSON.stringify(projects));
-    console.log('Projects fetched from DB and cached.');
-
-    res.status(200).json(projects);
-  } catch (error) {
-    console.error('Error fetching projects:', error);
-    res.status(500).json({ message: 'Server error fetching projects.' });
-  }
-};
-
-
-export const getProjectById = async (req: CustomRequest, res: Response): Promise<void> => {
-  try {
-    const project = await Project.findByPk(req.params.id, {
-      include: [{ model: User, as: 'creator', attributes: ['id', 'username', 'email', 'role'] }],
-    });
-
-    if (!project) {
-      res.status(404).json({ message: 'Project not found.' });
-      return;
-    }
-    res.status(200).json(project);
-  } catch (error) {
-    console.error('Error fetching project by ID:', error);
-    res.status(500).json({ message: 'Server error fetching project.' });
-  }
-};
-
 
 // @route   PUT /api/projects/:id
 // @desc    Update a project
@@ -113,7 +172,10 @@ export const updateProject = async (req: CustomRequest, res: Response): Promise<
       return;
     }
 
-    const project = await Project.findByPk(id);
+    const project = await Project.findByPk(id, {
+      include: [{ model: User, as: 'creator', attributes: userAttributes }]
+    });
+
     if (!project) {
       res.status(404).json({ message: 'Project not found.' });
       return;
@@ -126,17 +188,25 @@ export const updateProject = async (req: CustomRequest, res: Response): Promise<
       return;
     }
 
+    // Input validation
+    if (name !== undefined && name.trim().length === 0) {
+      res.status(400).json({ message: 'Project name cannot be empty.' });
+      return;
+    }
+
     await project.update({
-      name: name || project.name,
-      description: description || project.description,
+      name: name ? name.trim() : project.name,
+      description: description !== undefined ? description.trim() : project.description,
       status: status || project.status,
     });
 
-    // Invalidate the cache for all projects after update
-    await redisClient.del(projectListCacheKey);
-    // Also invalidate specific project cache if we implemented it (future)
-    // await redisClient.del(`project:${id}`);
-    console.log(`Invalidated project list cache and project:${id} (if implemented).`);
+    // Reload to get updated data
+    await project.reload({
+      include: [{ model: User, as: 'creator', attributes: userAttributes }]
+    });
+
+    // Invalidate all project-related cache
+    await invalidateProjectCache();
 
     // Emit real-time event
     io.emit('projectUpdated', project);
@@ -151,7 +221,6 @@ export const updateProject = async (req: CustomRequest, res: Response): Promise<
     }
   }
 };
-
 
 // @route   DELETE /api/projects/:id
 // @desc    Delete a project
@@ -180,12 +249,8 @@ export const deleteProject = async (req: CustomRequest, res: Response): Promise<
 
     await project.destroy();
 
-    // Invalidate the cache for all projects after deletion
-    await redisClient.del(projectListCacheKey);
-    // Also invalidate specific project cache if we implemented it
-    // await redisClient.del(`project:${id}`);
-    console.log(`Invalidated project list cache and project:${id} (if implemented).`);
-
+    // Invalidate all project-related cache
+    await invalidateProjectCache();
 
     // Emit real-time event
     io.emit('projectDeleted', { id });
@@ -194,5 +259,38 @@ export const deleteProject = async (req: CustomRequest, res: Response): Promise<
   } catch (error) {
     console.error('Error deleting project:', error);
     res.status(500).json({ message: 'Server error deleting project.' });
+  }
+};
+
+export const getProjectById = async (req: CustomRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    
+    // Optional: Add caching for individual projects
+    const cacheKey = `project:${id}`;
+    const cachedProject = await redisClient.get(cacheKey);
+    
+    if (cachedProject) {
+      console.log(`Serving project ${id} from cache.`);
+      res.status(200).json(JSON.parse(cachedProject));
+      return;
+    }
+
+    const project = await Project.findByPk(id, {
+      include: [{ model: User, as: 'creator', attributes: userAttributes }],
+    });
+
+    if (!project) {
+      res.status(404).json({ message: 'Project not found.' });
+      return;
+    }
+
+    // Cache individual project
+    await redisClient.setex(cacheKey, REDIS_CACHE_TTL, JSON.stringify(project));
+    
+    res.status(200).json(project);
+  } catch (error) {
+    console.error('Error fetching project by ID:', error);
+    res.status(500).json({ message: 'Server error fetching project.' });
   }
 };

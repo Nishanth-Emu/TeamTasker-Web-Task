@@ -13,7 +13,7 @@ interface CreateProjectFormProps {
 const createProjectSchema = z.object({
   name: z.string().min(3, 'Project name must be at least 3 characters'),
   description: z.string().optional(),
-  status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked', 'On Hold']).default('Not Started'),
+  status: z.enum(['Not Started', 'In Progress', 'Completed', 'On Hold', 'Cancelled']).default('Not Started'),
 });
 
 type CreateProjectInputs = z.infer<typeof createProjectSchema>;
@@ -98,9 +98,8 @@ const CreateProjectForm: React.FC<CreateProjectFormProps> = ({ onClose }) => {
               <option value="Not Started">Not Started</option>
               <option value="In Progress">In Progress</option>
               <option value="Completed">Completed</option>
-              <option value="Blocked">Blocked</option>
               <option value="On Hold">On Hold</option>
-
+              <option value="Cancelled">Cancelled</option>
             </select>
             {errors.status && <p className="mt-1 text-sm text-red-600">{errors.status.message}</p>}
           </div>
