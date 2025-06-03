@@ -1,19 +1,19 @@
 # 🧑‍💻 TeamTasker-Web-Task
 
-## 📅 Day 5 – Frontend Progress Update
+## 📅 Day 6 – Frontend Progress Update
 
 ### ✅ What's Done Today
-- 📝 **Task Module Fixed**
-  - Addressed critical bugs in both backend and frontend.
-  - Implemented live real-time updates using **Socket.IO** for better collaboration.
-  
-- 📤 **Task & Project Forms**
-  - Created dynamic forms for task and project creation on the frontend.
-  - Integrated with backend APIs.
+- 🔔 **Notification Feature**
+  - Real-time notifications currently working on.
 
-- 🧪 **Frontend Enhancements**
-  - Built a **sample dashboard** to display project and task data.
-  - Improved UI consistency and data flow between components.
+- 🐛 **Bug Fixes**
+  - Fixed issues in the project search functionality.
+
+- 🎯 **Filter Support**
+  - Added filter options for better data navigation and task management.
+
+- 🧑‍💼 **Admin Features**
+  - Admins can now perform full CRUD operations on users directly from the dashboard.
 
 ---
 
