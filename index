@@ -1,0 +1,129 @@
+// new index.ts
+
+import express from 'express';
+import { createServer } from 'http';
+import { Server as SocketIOServer } from 'socket.io';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import authRoutes from './routes/authRoutes';
+import projectRoutes from './routes/projectRoutes';
+import taskRoutes from './routes/taskRoutes';
+import userRoutes from './routes/userRoutes';
+import { authenticateToken } from './middlewares/authMiddleware';
+import { AppDataSource } from './data-source';
+import errorHandler from './middlewares/errorHandler';
+
+dotenv.config();
+
+const app = express();
+const httpServer = createServer(app);
+
+let io: SocketIOServer;
+// Map to store connected users' socket IDs
+const connectedUsers = new Map<string, string>(); // userId -> socketId
+
+export const initializeSocketIO = () => {
+  io = new SocketIOServer(httpServer, {
+    cors: {
+      origin: process.env.FRONTEND_URL,
+      methods: ["GET", "POST", "PUT", "DELETE"],
+      credentials: true
+    }
+  });
+
+  io.on('connection', (socket) => {
+    console.log('A user connected to Socket.IO:', socket.id);
+
+    // Handle user registration for notifications
+    socket.on('registerUser', (userId: string) => {
+      connectedUsers.set(userId, socket.id);
+      console.log(`User ${userId} registered with socket ${socket.id}`);
+      console.log('Connected users:', connectedUsers);
+    });
+
+    // Handle joining/leaving project rooms for tasks
+    socket.on('joinRoom', (projectId: string) => {
+      socket.join(projectId);
+      console.log(`Socket ${socket.id} joined project room: ${projectId}`);
+    });
+
+    socket.on('leaveRoom', (projectId: string) => {
+      socket.leave(projectId);
+      console.log(`Socket ${socket.id} left project room: ${projectId}`);
+    });
+
+    socket.on('disconnect', () => {
+      console.log('User disconnected from Socket.IO:', socket.id);
+      // Remove user from connectedUsers map
+      for (let [userId, socketId] of connectedUsers.entries()) {
+        if (socketId === socket.id) {
+          connectedUsers.delete(userId);
+          console.log(`User ${userId} unregistered.`);
+          break;
+        }
+      }
+      console.log('Connected users after disconnect:', connectedUsers);
+    });
+
+    // Handle unregistering a user explicitly (e.g., on logout)
+    socket.on('unregisterUser', (userId: string) => {
+      if (connectedUsers.get(userId) === socket.id) {
+        connectedUsers.delete(userId);
+        console.log(`User ${userId} explicitly unregistered.`);
+      }
+      console.log('Connected users after unregister:', connectedUsers);
+    });
+  });
+  console.log('Socket.IO initialized');
+};
+
+export const getIo = () => {
+  if (!io) {
+    throw new Error('Socket.IO not initialized. Call initializeSocketIO first.');
+  }
+  return io;
+};
+
+// New function to send a notification to a specific user
+export const sendNotificationToUser = (userId: string, notification: { id: string; message: string; link?: string; read: boolean; createdAt: string; type?: string }) => {
+  const socketId = connectedUsers.get(userId);
+  if (socketId) {
+    io.to(socketId).emit('newNotification', notification);
+    console.log(`Notification sent to user ${userId} (socket ${socketId}):`, notification.message);
+  } else {
+    console.log(`User ${userId} is not currently connected. Notification not sent via socket.`);
+    // In a full production app, you might save this to a DB for later delivery
+  }
+};
+
+
+// Middleware
+app.use(cors({
+  origin: process.env.FRONTEND_URL,
+  credentials: true,
+}));
+app.use(express.json());
+
+// Public routes
+app.use('/api/auth', authRoutes);
+
+// Protected routes
+app.use('/api', authenticateToken);
+app.use('/api/projects', projectRoutes);
+app.use('/api/tasks', taskRoutes);
+app.use('/api/users', userRoutes);
+
+// Error handling middleware
+app.use(errorHandler);
+
+// Database initialization and server start
+AppDataSource.initialize().then(() => {
+  console.log("Database connected!");
+  initializeSocketIO();
+  const PORT = process.env.PORT || 5000;
+  httpServer.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}).catch(error => console.log("Database connection error: ", error));
+
+export default app;

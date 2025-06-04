@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import Task from '../models/Task';
 import Project from '../models/Project';
 import User from '../models/User';
-import { io } from '../index';
+import { io, sendNotificationToUser } from '../index'; // Import the notification function
 import { redisClient, REDIS_CACHE_TTL } from '../config/redis';
 
 interface CustomRequest extends Request {
@@ -67,17 +67,30 @@ export const createTask = async (req: CustomRequest, res: Response): Promise<voi
     });
 
     if (createdTaskWithAssociations) {
+        // Emit to project room for real-time updates
         io.to(projectId).emit('taskCreated', createdTaskWithAssociations);
         console.log(`Emitted 'taskCreated' for project ${projectId}`);
+
+        // Send notification to assigned user if task is assigned
+        if (assignedTo && assignedTo !== req.user.id) {
+          const notification = {
+            id: `task-assigned-${task.id}-${Date.now()}`,
+            message: `You have been assigned a new task: ${title}`,
+            link: `/tasks/${task.id}`,
+            read: false,
+            createdAt: new Date().toISOString(),
+            type: 'task_assignment'
+          };
+          sendNotificationToUser(assignedTo, notification);
+        }
     }
 
-    res.status(201).json({ message: 'Task created successfully', task });
+    res.status(201).json({ message: 'Task created successfully', task: createdTaskWithAssociations });
   } catch (error) {
     console.error('Error creating task:', error);
     res.status(500).json({ message: 'Server error creating task.' });
   }
 };
-
 
 // @route   GET /api/tasks
 // @desc    Get all tasks or tasks for a specific project (with caching)
@@ -124,7 +137,6 @@ export const getTasks = async (req: CustomRequest, res: Response): Promise<void>
   }
 };
 
-
 // @route   GET /api/tasks/:id
 // @desc    Get a single task by ID
 // @access  Private (Any authenticated user)
@@ -162,7 +174,13 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
       return;
     }
 
-    const task = await Task.findByPk(id);
+    const task = await Task.findByPk(id, {
+      include: [
+        { model: User, as: 'assignee', attributes: userAttributes },
+        { model: User, as: 'reporter', attributes: userAttributes },
+      ],
+    });
+    
     if (!task) {
       res.status(404).json({ message: 'Task not found.' });
       return;
@@ -170,6 +188,8 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
 
     const currentUserRole = req.user.role;
     const currentUserId = req.user.id;
+    const oldAssignedTo = task.assignedTo;
+    const oldStatus = task.status;
 
     let isAuthorized = false;
     if (['Admin', 'Project Manager'].includes(currentUserRole)) {
@@ -238,7 +258,6 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
     }
     console.log(`Invalidated all tasks cache and relevant project tasks caches.`);
 
-
     const updatedTaskWithAssociations = await Task.findByPk(task.id, {
         include: [
             { model: Project, as: 'project', attributes: ['id', 'name', 'status'] },
@@ -253,14 +272,53 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
         console.log(`Emitted 'taskUpdated' to new project room: ${updatedTaskWithAssociations.projectId}`);
 
         // If the project ID changed, also notify the OLD project's room
-        // This allows the old project's frontend to remove the task from its list
         if (projectId && projectId !== oldProjectId) {
-            io.to(oldProjectId).emit('taskUpdated', updatedTaskWithAssociations); // Send the *updated* task to the old room
+            io.to(oldProjectId).emit('taskUpdated', updatedTaskWithAssociations);
             console.log(`Emitted 'taskUpdated' to old project room (for removal): ${oldProjectId}`);
+        }
+
+        // Send notifications for relevant changes
+        // 1. Task assignment change notification
+        if (assignedTo && assignedTo !== oldAssignedTo && assignedTo !== currentUserId) {
+          const notification = {
+            id: `task-reassigned-${task.id}-${Date.now()}`,
+            message: `You have been assigned to task: ${updatedTaskWithAssociations.title}`,
+            link: `/tasks/${task.id}`,
+            read: false,
+            createdAt: new Date().toISOString(),
+            type: 'task_assignment'
+          };
+          sendNotificationToUser(assignedTo, notification);
+        }
+
+        // 2. Status change notification (notify assignee if status changed and user is not the assignee)
+        if (status && status !== oldStatus && task.assignedTo && task.assignedTo !== currentUserId) {
+          const notification = {
+            id: `task-status-${task.id}-${Date.now()}`,
+            message: `Task "${updatedTaskWithAssociations.title}" status changed to: ${status}`,
+            link: `/tasks/${task.id}`,
+            read: false,
+            createdAt: new Date().toISOString(),
+            type: 'task_status_change'
+          };
+          sendNotificationToUser(task.assignedTo, notification);
+        }
+
+        // 3. Notify reporter if task is completed and reporter is not the one making the change
+        if (status === 'Done' && task.reportedBy && task.reportedBy !== currentUserId) {
+          const notification = {
+            id: `task-completed-${task.id}-${Date.now()}`,
+            message: `Task "${updatedTaskWithAssociations.title}" has been completed`,
+            link: `/tasks/${task.id}`,
+            read: false,
+            createdAt: new Date().toISOString(),
+            type: 'task_completion'
+          };
+          sendNotificationToUser(task.reportedBy, notification);
         }
     }
 
-    res.status(200).json({ message: 'Task updated successfully', task });
+    res.status(200).json({ message: 'Task updated successfully', task: updatedTaskWithAssociations });
   } catch (error) {
     console.error('Error updating task:', error);
     res.status(500).json({ message: 'Server error updating task.' });
@@ -279,7 +337,13 @@ export const deleteTask = async (req: CustomRequest, res: Response): Promise<voi
       return;
     }
 
-    const task = await Task.findByPk(id);
+    const task = await Task.findByPk(id, {
+      include: [
+        { model: User, as: 'assignee', attributes: userAttributes },
+        { model: User, as: 'reporter', attributes: userAttributes },
+      ],
+    });
+    
     if (!task) {
       res.status(404).json({ message: 'Task not found.' });
       return;
@@ -293,6 +357,8 @@ export const deleteTask = async (req: CustomRequest, res: Response): Promise<voi
     }
 
     const projectId = task.projectId; // Get projectId before deleting
+    const taskTitle = task.title;
+    const assignedTo = task.assignedTo;
 
     await task.destroy();
 
@@ -301,8 +367,22 @@ export const deleteTask = async (req: CustomRequest, res: Response): Promise<voi
     await redisClient.del(getTasksCacheKey(projectId));
     console.log(`Invalidated all tasks cache and project ${projectId} tasks cache.`);
 
+    // Emit real-time update
     io.to(projectId).emit('taskDeleted', { id, projectId });
     console.log(`Emitted 'taskDeleted' for project ${projectId}`);
+
+    // Send notification to assignee if task was assigned and assignee is not the one deleting
+    if (assignedTo && assignedTo !== req.user.id) {
+      const notification = {
+        id: `task-deleted-${id}-${Date.now()}`,
+        message: `Task "${taskTitle}" has been deleted`,
+        link: `/projects/${projectId}`,
+        read: false,
+        createdAt: new Date().toISOString(),
+        type: 'task_deletion'
+      };
+      sendNotificationToUser(assignedTo, notification);
+    }
 
     res.status(200).json({ message: 'Task deleted successfully.' });
   } catch (error) {

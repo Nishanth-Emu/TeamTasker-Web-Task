@@ -1,3 +1,5 @@
+// src/App.tsx
+
 import { Routes, Route, Link, useNavigate } from 'react-router-dom';
 import './index.css';
 import LoginForm from './components/auth/LoginForm';
@@ -7,9 +9,10 @@ import DashboardLayout from './components/layout/DashboardLayout';
 import ProjectsPage from './pages/ProjectsPage';
 import ProjectDetailPage from './pages/ProjectDetailPage';
 import UsersPage from './pages/UsersPage';
+import NotificationsPage from './pages/NotificationsPage'; 
 import { Toaster } from 'sonner';
 import { NotificationProvider } from './context/NotificationContext';
-// import NotificationToastDisplay from './components/notifications/NotificationToastDisplay';
+import NotificationToastDisplay from './components/notifications/NotificationToastDisplay';
 
 const HomePage = () => (
   <div className="p-8 text-center bg-white rounded-lg shadow-md max-w-sm mx-auto">
@@ -62,11 +65,14 @@ function App() {
             <Route path="projects" element={<ProjectsPage />} />
             <Route path="projects/:projectId/tasks" element={<ProjectDetailPage />} />
             <Route path="users" element={<UsersPage />} />
+            <Route path="notifications" element={<NotificationsPage />} /> {/* <--- NEW ROUTE */}
           </Route>
 
           <Route path="*" element={<div className="text-center text-xl font-bold p-10">404 - Page Not Found</div>} />
         </Routes>
       </div>
+      {/* RENDER NotificationToastDisplay AND Toaster */}
+      <NotificationToastDisplay />
       <Toaster richColors position="top-right" />
     </NotificationProvider>
   );

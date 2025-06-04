@@ -1,3 +1,5 @@
+// existing index.ts with notification features integrated
+
 import express, { Application, Request, Response } from 'express';
 import { createServer } from 'http'; 
 import { Server as SocketIOServer } from 'socket.io';
@@ -27,6 +29,8 @@ const io = new SocketIOServer(httpServer, {
   },
 });
 
+// Map to store connected users' socket IDs for notifications
+const connectedUsers = new Map<string, string>(); // userId -> socketId
 
 app.use(express.json());
 
@@ -43,10 +47,16 @@ app.use('/api/users', userRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/tasks', taskRoutes); 
 
-
-// Socket.IO connection handling
+// Socket.IO connection handling with notification features
 io.on('connection', (socket) => {
   console.log(`A user connected: ${socket.id}`);
+
+  // Handle user registration for notifications
+  socket.on('registerUser', (userId: string) => {
+    connectedUsers.set(userId, socket.id);
+    console.log(`User ${userId} registered with socket ${socket.id}`);
+    console.log('Connected users:', connectedUsers);
+  });
 
   socket.on('joinProject', (projectId: string) => {
     socket.join(projectId);
@@ -60,8 +70,38 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log(`User disconnected: ${socket.id}`);
+    // Remove user from connectedUsers map
+    for (let [userId, socketId] of connectedUsers.entries()) {
+      if (socketId === socket.id) {
+        connectedUsers.delete(userId);
+        console.log(`User ${userId} unregistered.`);
+        break;
+      }
+    }
+    console.log('Connected users after disconnect:', connectedUsers);
+  });
+
+  // Handle unregistering a user explicitly (e.g., on logout)
+  socket.on('unregisterUser', (userId: string) => {
+    if (connectedUsers.get(userId) === socket.id) {
+      connectedUsers.delete(userId);
+      console.log(`User ${userId} explicitly unregistered.`);
+    }
+    console.log('Connected users after unregister:', connectedUsers);
   });
 });
+
+// Function to send a notification to a specific user
+export const sendNotificationToUser = (userId: string, notification: { id: string; message: string; link?: string; read: boolean; createdAt: string; type?: string }) => {
+  const socketId = connectedUsers.get(userId);
+  if (socketId) {
+    io.to(socketId).emit('newNotification', notification);
+    console.log(`Notification sent to user ${userId} (socket ${socketId}):`, notification.message);
+  } else {
+    console.log(`User ${userId} is not currently connected. Notification not sent via socket.`);
+    // In a full production app, you might save this to a DB for later delivery
+  }
+};
 
 const startServer = async () => {
   try {
