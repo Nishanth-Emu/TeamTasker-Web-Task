@@ -71,7 +71,6 @@ function App() {
           <Route path="*" element={<div className="text-center text-xl font-bold p-10">404 - Page Not Found</div>} />
         </Routes>
       </div>
-      {/* RENDER NotificationToastDisplay AND Toaster */}
       <NotificationToastDisplay />
       <Toaster richColors position="top-right" />
     </NotificationProvider>
