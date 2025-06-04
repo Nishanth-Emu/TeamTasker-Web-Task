@@ -76,7 +76,10 @@ export const createTask = async (req: CustomRequest, res: Response): Promise<voi
           const notification = {
             id: `task-assigned-${task.id}-${Date.now()}`,
             message: `You have been assigned a new task: ${title}`,
-            link: `/tasks/${task.id}`,
+            // --- MODIFIED LINK FOR CREATE TASK ---
+            link: `/dashboard/projects/${projectId}/tasks`, // Ensure full path
+            projectId: projectId, // Add projectId for frontend convenience
+            // ------------------------------------
             read: false,
             createdAt: new Date().toISOString(),
             type: 'task_assignment'
@@ -283,7 +286,10 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
           const notification = {
             id: `task-reassigned-${task.id}-${Date.now()}`,
             message: `You have been assigned to task: ${updatedTaskWithAssociations.title}`,
-            link: `/tasks/${task.id}`,
+            // --- MODIFIED LINK FOR TASK REASSIGNMENT ---
+            link: `/dashboard/projects/${updatedTaskWithAssociations.projectId}/tasks`, // Use updatedTaskWithAssociations.projectId
+            projectId: updatedTaskWithAssociations.projectId, // Add projectId
+            // ------------------------------------------
             read: false,
             createdAt: new Date().toISOString(),
             type: 'task_assignment'
@@ -296,7 +302,10 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
           const notification = {
             id: `task-status-${task.id}-${Date.now()}`,
             message: `Task "${updatedTaskWithAssociations.title}" status changed to: ${status}`,
-            link: `/tasks/${task.id}`,
+            // --- MODIFIED LINK FOR STATUS CHANGE ---
+            link: `/dashboard/projects/${updatedTaskWithAssociations.projectId}/tasks`, // Use updatedTaskWithAssociations.projectId
+            projectId: updatedTaskWithAssociations.projectId, // Add projectId
+            // -------------------------------------
             read: false,
             createdAt: new Date().toISOString(),
             type: 'task_status_change'
@@ -309,7 +318,10 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
           const notification = {
             id: `task-completed-${task.id}-${Date.now()}`,
             message: `Task "${updatedTaskWithAssociations.title}" has been completed`,
-            link: `/tasks/${task.id}`,
+            // --- MODIFIED LINK FOR TASK COMPLETION ---
+            link: `/dashboard/projects/${updatedTaskWithAssociations.projectId}/tasks`, // Use updatedTaskWithAssociations.projectId
+            projectId: updatedTaskWithAssociations.projectId, // Add projectId
+            // ---------------------------------------
             read: false,
             createdAt: new Date().toISOString(),
             type: 'task_completion'
@@ -376,7 +388,10 @@ export const deleteTask = async (req: CustomRequest, res: Response): Promise<voi
       const notification = {
         id: `task-deleted-${id}-${Date.now()}`,
         message: `Task "${taskTitle}" has been deleted`,
-        link: `/projects/${projectId}`,
+        // --- MODIFIED LINK FOR TASK DELETION ---
+        link: `/dashboard/projects/${projectId}/tasks`, // Link to the project's task page
+        projectId: projectId, // Add projectId
+        // -------------------------------------
         read: false,
         createdAt: new Date().toISOString(),
         type: 'task_deletion'

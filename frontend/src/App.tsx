@@ -1,5 +1,3 @@
-// src/App.tsx
-
 import { Routes, Route, Link, useNavigate } from 'react-router-dom';
 import './index.css';
 import LoginForm from './components/auth/LoginForm';

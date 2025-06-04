@@ -6,6 +6,7 @@ interface Notification {
   id: string;
   message: string;
   link?: string;
+  projectId?: string; // Assuming you've added this to your Notification interface
   read: boolean;
   createdAt: string;
   type?: 'task_assigned' | 'task_updated' | 'project_updated';
@@ -18,14 +19,25 @@ const NotificationsPage: React.FC = () => {
   const handleNotificationClick = (notification: Notification) => {
     markAsRead(notification.id);
     if (notification.link) {
-      navigate(notification.link);
+      let targetPath = notification.link;
+
+      // Check if the link starts with /tasks/ and if projectId is available
+      // This is a client-side workaround if backend sends incomplete links
+      if (notification.link.startsWith('/tasks/') && notification.projectId) {
+        // We can just use the projectId to build the required route
+        // The /tasks part of the route is static after :projectId
+        targetPath = `/dashboard/projects/${notification.projectId}/tasks`;
+        console.log("Corrected navigation path to:", targetPath); // Debug log for corrected path
+      }
+
+      console.log("Attempting to navigate to (final):", targetPath); // Final path before navigation
+      navigate(targetPath);
     }
   };
 
-  // Helper function to format date
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleString(); // Adjust formatting as per your preference
+    return date.toLocaleString();
   };
 
   return (
