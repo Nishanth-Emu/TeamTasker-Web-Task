@@ -1,14 +1,14 @@
-import React from 'react';
+import React, { useMemo } from 'react'; // Added useMemo for derived state
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { useNotifications } from '../../context/NotificationContext';
+import { useSocket } from '../../context/SocketContext'; // Updated import
 import { BriefcaseIcon, UsersIcon, BellIcon, ArrowLeftEndOnRectangleIcon , UserCircleIcon } from '@heroicons/react/24/outline'; 
 import { BuildingOffice2Icon } from '@heroicons/react/24/solid';
 
 
 const DashboardLayout: React.FC = () => {
   const { user, logout } = useAuth();
-  const { unreadCount } = useNotifications();
+  const { notifications } = useSocket(); // Use useSocket from SocketContext
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -16,6 +16,10 @@ const DashboardLayout: React.FC = () => {
     navigate('/login');
   };
 
+  // Calculate unreadCount from the notifications array
+  const unreadCount = useMemo(() => {
+    return notifications.filter(notification => !notification.isRead).length;
+  }, [notifications]);
   
 
   const navLinkClasses = "flex items-center px-3 py-2 text-sm font-medium text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all duration-150 ease-in-out";

@@ -10,9 +10,9 @@ import ProjectDetailPage from './pages/ProjectDetailPage';
 import UsersPage from './pages/UsersPage';
 import NotificationsPage from './pages/NotificationsPage'; 
 import { Toaster } from 'sonner';
-import { NotificationProvider } from './context/NotificationContext';
 import NotificationToastDisplay from './components/notifications/NotificationToastDisplay';
 import { ArrowRightIcon, BuildingOffice2Icon, ArrowPathIcon, QuestionMarkCircleIcon } from '@heroicons/react/24/solid';
+import { SocketProvider } from './context/SocketContext'; // Added from new app.tsx
 
 const HomePage: React.FC = () => (
   <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-50 via-sky-50 to-blue-100 p-6 text-slate-800 selection:bg-blue-500 selection:text-white">
@@ -93,7 +93,7 @@ const NotFoundPage: React.FC = () => (
 
 function App() {
   return (
-    <NotificationProvider>
+    <SocketProvider> 
       <div className="min-h-screen bg-slate-100 text-slate-800">
         <Routes>
           <Route path="/" element={<HomePage />} />
@@ -119,9 +119,9 @@ function App() {
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </div>
-      <NotificationToastDisplay />
+      <NotificationToastDisplay /> {/* Already present, consistent with new app.tsx */}
       <Toaster richColors position="top-right" theme="light" closeButton />
-    </NotificationProvider>
+    </SocketProvider>
   );
 }
 

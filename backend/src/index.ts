@@ -8,11 +8,14 @@ import authRoutes from './routes/auth.routes';
 import userRoutes from './routes/user.routes';
 import projectRoutes from './routes/project.routes';
 import taskRoutes from './routes/task.routes';
+import notificationRoutes from './routes/notification.routes';
 
 import sequelize from './config/database';
 import User from './models/User';
 import Project from './models/Project'
 import Task from './models/Task';
+import Notification from './models/Notification'; 
+
 
 const app: Application = express();
 const PORT: number = process.env.PORT ? parseInt(process.env.PORT as string, 10) : 5000;
@@ -44,6 +47,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/tasks', taskRoutes); 
+app.use('/api/notifications', notificationRoutes); 
+
 
 // Socket.IO connection handling with notification features
 io.on('connection', (socket) => {
@@ -117,6 +122,10 @@ const startServer = async () => {
     // Sync the Task model
     await Task.sync({ alter: true });
     console.log('Task model synchronized successfully.');
+
+    // Sync the Notification model
+    await Notification.sync({ alter: true }); 
+    console.log('Notification model synchronized successfully.');
 
     // sync all models
     await sequelize.sync({ alter: true });
