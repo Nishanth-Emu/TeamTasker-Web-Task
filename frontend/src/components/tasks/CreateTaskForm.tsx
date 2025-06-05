@@ -2,29 +2,39 @@ import React from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import api from '../../api/axios';
-import { useQuery } from '@tanstack/react-query';
+import { 
+    XMarkIcon, 
+    ExclamationCircleIcon, 
+    PencilIcon, 
+    Bars3BottomLeftIcon, 
+    ListBulletIcon, 
+    FlagIcon, 
+    CalendarDaysIcon, 
+    UserCircleIcon,
+    PlusCircleIcon 
+} from '@heroicons/react/24/outline';
 
 interface CreateTaskFormProps {
   projectId: string;
   onClose: () => void;
 }
 
-// Define User type for dropdown
 interface User {
     id: string;
     username: string;
 }
 
-// Zod schema for task creation
 const createTaskSchema = z.object({
-  title: z.string().min(3, 'Task title must be at least 3 characters'),
+  title: z.string().min(3, 'Task title must be at least 3 characters long.'),
   description: z.string().optional(),
   status: z.enum(['To Do', 'In Progress', 'Done', 'Blocked']).default('To Do'),
   priority: z.enum(['Low', 'Medium', 'High']).default('Medium'),
-  deadline: z.string().optional(), // Will be Date string from input
-  assignedTo: z.string().optional().nullable(), // User ID
+  deadline: z.string().optional().refine(val => !val || !isNaN(Date.parse(val)), {
+    message: "Invalid date format"
+  }).transform(val => val ? new Date(val).toISOString().split('T')[0] : undefined), // Ensure yyyy-mm-dd
+  assignedTo: z.string().optional().nullable(),
 });
 
 type CreateTaskInputs = z.infer<typeof createTaskSchema>;
@@ -32,51 +42,49 @@ type CreateTaskInputs = z.infer<typeof createTaskSchema>;
 const CreateTaskForm: React.FC<CreateTaskFormProps> = ({ projectId, onClose }) => {
   const queryClient = useQueryClient();
 
-  // Fetch users for assignee dropdown
   const { data: users, isLoading: areUsersLoading, isError: isUsersError } = useQuery<User[], Error>({
-    queryKey: ['users'],
+    queryKey: ['usersListForTaskForm'], // More specific key
     queryFn: async () => {
-      const response = await api.get('/users'); // Or a dedicated endpoint for assignable users
+      const response = await api.get('/users');
       return response.data;
     },
+    staleTime: 5 * 60 * 1000, // Cache users for 5 minutes
   });
 
   const {
     register,
     handleSubmit,
-    formState: { errors },
+    formState: { errors, isSubmitting },
     setError,
   } = useForm<CreateTaskInputs>({
     resolver: zodResolver(createTaskSchema) as any,
     defaultValues: {
       status: 'To Do',
       priority: 'Medium',
-      assignedTo: '', // Default to empty string for "Unassigned" option
+      assignedTo: '',
     },
+    mode: 'onTouched',
   });
 
-  // Mutation to create a task
   const createTaskMutation = useMutation({
     mutationFn: async (newTask: CreateTaskInputs) => {
       const payload = {
         ...newTask,
-        projectId, // Add projectId from props
-        assignedTo: newTask.assignedTo === '' ? null : newTask.assignedTo, // Convert empty string to null
+        projectId,
+        assignedTo: newTask.assignedTo === '' ? null : newTask.assignedTo,
       };
       const response = await api.post('/tasks', payload);
       return response.data;
     },
     onSuccess: () => {
-      // Correctly invalidates tasks for this specific project
       queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
-      // Also invalidate the 'all tasks' cache key in case any view uses it
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      onClose(); // Close the modal on success
+      onClose();
     },
     onError: (error: any) => {
-      setError('root', {
+      setError('root.serverError', {
         type: 'manual',
-        message: error.response?.data?.message || error.message || 'Failed to create task.',
+        message: error.response?.data?.message || error.message || 'Failed to create task. Please try again.',
       });
       console.error('Create task error:', error);
     },
@@ -85,101 +93,219 @@ const CreateTaskForm: React.FC<CreateTaskFormProps> = ({ projectId, onClose }) =
   const onSubmit = (data: CreateTaskInputs) => {
     createTaskMutation.mutate(data);
   };
+  
+  const commonInputClasses = "form-input block w-full py-2.5 px-3.5 border border-slate-300 bg-white rounded-lg shadow-sm placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none sm:text-sm transition-colors duration-150 ease-in-out";
+  const commonLabelClasses = "block text-sm font-medium text-slate-700 mb-1.5";
+  const commonErrorClasses = "mt-1.5 text-xs text-red-600 flex items-center";
 
-  if (areUsersLoading) return <div>Loading users...</div>;
-  if (isUsersError) return <div>Error loading users for assignee dropdown.</div>;
+  const today = new Date().toISOString().split('T')[0];
+
+  if (areUsersLoading) return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white p-8 rounded-lg shadow-xl max-w-lg w-full text-center">
+            <svg className="animate-spin h-8 w-8 text-blue-600 mx-auto mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p className="text-slate-600">Loading user data...</p>
+        </div>
+    </div>
+  );
+
+  if (isUsersError) return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white p-8 rounded-lg shadow-xl max-w-lg w-full text-center">
+            <ExclamationCircleIcon className="h-10 w-10 text-red-500 mx-auto mb-3" />
+            <p className="text-red-600 font-medium">Error loading users.</p>
+            <p className="text-sm text-slate-500 mt-1">Cannot assign tasks at the moment. Please try again later.</p>
+            <button onClick={onClose} className="mt-4 px-4 py-2 bg-slate-200 text-slate-700 rounded-md hover:bg-slate-300 transition-colors">Close</button>
+        </div>
+    </div>
+  );
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white p-8 rounded-lg shadow-xl max-w-md w-full">
-        <h2 className="text-2xl font-bold mb-6 text-center">Create New Task</h2>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div>
-            <label htmlFor="title" className="block text-sm font-medium text-gray-700">Task Title</label>
-            <input
-              id="title"
-              type="text"
-              {...register('title')}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-            />
-            {errors.title && <p className="mt-1 text-sm text-red-600">{errors.title.message}</p>}
+    <div 
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-task-title"
+    >
+      <div className="bg-white p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-lg transform transition-all">
+        <div className="flex items-center justify-between mb-6 sm:mb-8 pb-4 border-b border-slate-200">
+          <div className="flex items-center">
+            <PlusCircleIcon className="h-7 w-7 text-blue-600 mr-3" />
+            <h2 id="create-task-title" className="text-xl sm:text-2xl font-semibold text-slate-800">
+              Create New Task
+            </h2>
           </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+            aria-label="Close modal"
+          >
+            <XMarkIcon className="h-6 w-6" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+          {errors.root?.serverError && (
+            <div className="rounded-md bg-red-50 p-3.5 border border-red-300">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <ExclamationCircleIcon className="h-5 w-5 text-red-500" aria-hidden="true" />
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-red-700">
+                    {errors.root.serverError.message}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div>
-            <label htmlFor="description" className="block text-sm font-medium text-gray-700">Description</label>
-            <textarea
-              id="description"
-              {...register('description')}
-              rows={3}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-            ></textarea>
-            {errors.description && <p className="mt-1 text-sm text-red-600">{errors.description.message}</p>}
+            <label htmlFor="title" className={commonLabelClasses}>Task Title</label>
+             <div className="relative">
+                <PencilIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-400 pointer-events-none" />
+                <input
+                  id="title"
+                  type="text"
+                  {...register('title')}
+                  aria-invalid={errors.title ? "true" : "false"}
+                  className={`${commonInputClasses} pl-10 ${errors.title ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
+                  placeholder="e.g., Design homepage mockups"
+                />
+            </div>
+            {errors.title && <p className={commonErrorClasses}><ExclamationCircleIcon className="h-4 w-4 mr-1" />{errors.title.message}</p>}
           </div>
+
           <div>
-            <label htmlFor="status" className="block text-sm font-medium text-gray-700">Status</label>
-            <select
-              id="status"
-              {...register('status')}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-            >
-              <option value="To Do">To Do</option>
-              <option value="In Progress">In Progress</option>
-              <option value="Done">Done</option>
-              <option value="Blocked">Blocked</option>
-            </select>
-            {errors.status && <p className="mt-1 text-sm text-red-600">{errors.status.message}</p>}
+            <label htmlFor="description" className={commonLabelClasses}>Description (Optional)</label>
+            <div className="relative">
+                <Bars3BottomLeftIcon className="absolute left-3 top-3.5 h-5 w-5 text-slate-400 pointer-events-none" />
+                <textarea
+                  id="description"
+                  {...register('description')}
+                  rows={3}
+                  aria-invalid={errors.description ? "true" : "false"}
+                  className={`${commonInputClasses} pl-10 resize-y ${errors.description ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
+                  placeholder="Add more details about the task requirements..."
+                ></textarea>
+            </div>
+            {errors.description && <p className={commonErrorClasses}><ExclamationCircleIcon className="h-4 w-4 mr-1" />{errors.description.message}</p>}
           </div>
-          <div>
-            <label htmlFor="priority" className="block text-sm font-medium text-gray-700">Priority</label>
-            <select
-              id="priority"
-              {...register('priority')}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-            >
-              <option value="Low">Low</option>
-              <option value="Medium">Medium</option>
-              <option value="High">High</option>
-            </select>
-            {errors.priority && <p className="mt-1 text-sm text-red-600">{errors.priority.message}</p>}
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-5">
+            <div>
+              <label htmlFor="status" className={commonLabelClasses}>Status</label>
+              <div className="relative">
+                  <ListBulletIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-400 pointer-events-none" />
+                  <select
+                    id="status"
+                    {...register('status')}
+                    aria-invalid={errors.status ? "true" : "false"}
+                    className={`${commonInputClasses} pl-10 appearance-none ${errors.status ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
+                  >
+                    <option value="To Do">To Do</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Done">Done</option>
+                    <option value="Blocked">Blocked</option>
+                  </select>
+                  <svg className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-400 pointer-events-none" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+              </div>
+              {errors.status && <p className={commonErrorClasses}><ExclamationCircleIcon className="h-4 w-4 mr-1" />{errors.status.message}</p>}
+            </div>
+
+            <div>
+              <label htmlFor="priority" className={commonLabelClasses}>Priority</label>
+              <div className="relative">
+                  <FlagIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-400 pointer-events-none" />
+                  <select
+                    id="priority"
+                    {...register('priority')}
+                    aria-invalid={errors.priority ? "true" : "false"}
+                    className={`${commonInputClasses} pl-10 appearance-none ${errors.priority ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
+                  >
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                  </select>
+                  <svg className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-400 pointer-events-none" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+              </div>
+              {errors.priority && <p className={commonErrorClasses}><ExclamationCircleIcon className="h-4 w-4 mr-1" />{errors.priority.message}</p>}
+            </div>
           </div>
-          <div>
-            <label htmlFor="deadline" className="block text-sm font-medium text-gray-700">Deadline</label>
-            <input
-              id="deadline"
-              type="date" // Use type="date" for date input
-              {...register('deadline')}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-            />
-            {errors.deadline && <p className="mt-1 text-sm text-red-600">{errors.deadline.message}</p>}
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-5">
+            <div>
+              <label htmlFor="deadline" className={commonLabelClasses}>Deadline (Optional)</label>
+              <div className="relative">
+                <CalendarDaysIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-400 pointer-events-none" />
+                <input
+                  id="deadline"
+                  type="date"
+                  min={today}
+                  {...register('deadline')}
+                  aria-invalid={errors.deadline ? "true" : "false"}
+                  className={`${commonInputClasses} pl-10 ${errors.deadline ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
+                />
+              </div>
+              {errors.deadline && <p className={commonErrorClasses}><ExclamationCircleIcon className="h-4 w-4 mr-1" />{errors.deadline.message}</p>}
+            </div>
+
+            <div>
+              <label htmlFor="assignedTo" className={commonLabelClasses}>Assign To (Optional)</label>
+              <div className="relative">
+                <UserCircleIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-400 pointer-events-none" />
+                <select
+                  id="assignedTo"
+                  {...register('assignedTo')}
+                  aria-invalid={errors.assignedTo ? "true" : "false"}
+                  className={`${commonInputClasses} pl-10 appearance-none ${errors.assignedTo ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
+                >
+                  <option value="">Unassigned</option>
+                  {users?.map((user) => (
+                    <option key={user.id} value={user.id}>{user.username}</option>
+                  ))}
+                </select>
+                 <svg className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-400 pointer-events-none" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+              </div>
+              {errors.assignedTo && <p className={commonErrorClasses}><ExclamationCircleIcon className="h-4 w-4 mr-1" />{errors.assignedTo.message}</p>}
+            </div>
           </div>
-          <div>
-            <label htmlFor="assignedTo" className="block text-sm font-medium text-gray-700">Assigned To</label>
-            <select
-              id="assignedTo"
-              {...register('assignedTo')}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-            >
-              <option value="">Unassigned</option> {/* Option for unassigned */}
-              {users?.map((user) => (
-                <option key={user.id} value={user.id}>{user.username}</option>
-              ))}
-            </select>
-            {errors.assignedTo && <p className="mt-1 text-sm text-red-600">{errors.assignedTo.message}</p>}
-          </div>
-          {errors.root && <p className="mt-1 text-sm text-red-600 text-center">{errors.root.message}</p>}
-          <div className="flex justify-end space-x-3 mt-6">
+
+
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-3 pt-4 mt-6 border-t border-slate-200 space-y-2 sm:space-y-0">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
+              className="w-full sm:w-auto px-5 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200/80 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-1 transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-              disabled={createTaskMutation.isPending}
+              className="w-full sm:w-auto flex items-center justify-center px-5 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-colors disabled:opacity-60"
+              disabled={isSubmitting || createTaskMutation.isPending}
             >
-              {createTaskMutation.isPending ? 'Creating...' : 'Create Task'}
+              {isSubmitting || createTaskMutation.isPending ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Creating...
+                </>
+              ) : (
+                'Create Task'
+              )}
             </button>
           </div>
         </form>

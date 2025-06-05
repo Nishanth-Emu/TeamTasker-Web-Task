@@ -1,13 +1,32 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 import { io } from 'socket.io-client';
 import CreateTaskForm from '../components/tasks/CreateTaskForm';
-import EditTaskForm from '../components/tasks/EditTaskForm'; // Import EditTaskForm
+import EditTaskForm from '../components/tasks/EditTaskForm';
+import ConfirmDeleteDialog from '../components/common/ConfirmDeleteDialog';
 
-// Type Definitions (ensure these match your backend models)
+import {
+  ArrowLeftIcon,
+  BriefcaseIcon,
+  UserCircleIcon,
+  CalendarDaysIcon,
+  ClockIcon,
+  TagIcon,
+  FlagIcon,
+  PlusIcon,
+  PencilSquareIcon,
+  TrashIcon,
+  ExclamationTriangleIcon,
+  CheckCircleIcon,
+  NoSymbolIcon,
+  BoltIcon, // For In Progress
+  ListBulletIcon,
+  ArchiveBoxXMarkIcon
+} from '@heroicons/react/24/outline';
+
 interface Project {
   id: string;
   name: string;
@@ -36,9 +55,48 @@ interface Task {
   reporter?: { id: string; username: string; email: string; role: string; };
 }
 
-// Ensure this URL is correct and points to your backend's base URL
-// It typically replaces '/api' with an empty string if your Socket.IO is served from root.
 const socket = io(import.meta.env.VITE_API_BASE_URL.replace('/api', ''));
+
+const getProjectStatusStyles = (status: Project['status']) => {
+  switch (status) {
+    case 'Completed':
+      return 'bg-green-100 text-green-700 border-green-300';
+    case 'In Progress':
+      return 'bg-blue-100 text-blue-700 border-blue-300';
+    case 'Blocked':
+      return 'bg-red-100 text-red-700 border-red-300';
+    case 'Not Started':
+    default:
+      return 'bg-slate-100 text-slate-600 border-slate-300';
+  }
+};
+
+const getTaskStatusStyles = (status: Task['status']) => {
+  switch (status) {
+    case 'Done':
+      return 'bg-green-100 text-green-700';
+    case 'In Progress':
+      return 'bg-sky-100 text-sky-700';
+    case 'Blocked':
+      return 'bg-red-100 text-red-700';
+    case 'To Do':
+    default:
+      return 'bg-slate-100 text-slate-600';
+  }
+};
+
+const getTaskPriorityStyles = (priority: Task['priority']) => {
+  switch (priority) {
+    case 'High':
+      return 'bg-red-100 text-red-700';
+    case 'Medium':
+      return 'bg-amber-100 text-amber-700';
+    case 'Low':
+    default:
+      return 'bg-emerald-100 text-emerald-600';
+  }
+};
+
 
 const ProjectDetailPage: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -47,8 +105,9 @@ const ProjectDetailPage: React.FC = () => {
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
   const [isEditTaskModalOpen, setIsEditTaskModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
 
-  // Fetch project details
   const { data: project, isLoading: isProjectLoading, isError: isProjectError, error: projectError } = useQuery<Project, Error>({
     queryKey: ['project', projectId],
     queryFn: async () => {
@@ -57,9 +116,9 @@ const ProjectDetailPage: React.FC = () => {
       return response.data;
     },
     enabled: !!projectId,
+    staleTime: 60000,
   });
 
-  // Fetch tasks for this project
   const { data: tasks, isLoading: isTasksLoading, isError: isTasksError, error: tasksError } = useQuery<Task[], Error>({
     queryKey: ['tasks', projectId],
     queryFn: async () => {
@@ -68,202 +127,245 @@ const ProjectDetailPage: React.FC = () => {
       return response.data;
     },
     enabled: !!projectId,
+    staleTime: 30000,
   });
 
-  // Socket.IO for real-time task updates
   useEffect(() => {
     if (!projectId) return;
-
-    // Join the project-specific room
     socket.emit('joinProject', projectId);
-
-    // Listener for 'taskCreated' events
-    socket.on('taskCreated', (newTask: Task) => {
-      console.log('Real-time: Task Created', newTask);
-      if (newTask.projectId === projectId) {
-        queryClient.setQueryData<Task[]>(['tasks', projectId], (oldTasks) => {
-          // Add the new task if it's not already there and belongs to this project
-          const exists = oldTasks?.some(task => task.id === newTask.id);
-          return oldTasks ? (exists ? oldTasks : [...oldTasks, newTask]) : [newTask];
-        });
-      }
-    });
-
-    // Listener for 'taskUpdated' events
-    socket.on('taskUpdated', (updatedTask: Task) => {
-      console.log('Real-time: Task Updated', updatedTask);
-      const currentProjectTasksKey = ['tasks', projectId];
-
-      // If the updated task now belongs to the CURRENT project
-      if (updatedTask.projectId === projectId) {
-        queryClient.setQueryData<Task[]>(currentProjectTasksKey, (oldTasks) => {
-          if (!oldTasks) return [updatedTask]; // Handle undefined/null case
-          
-          const exists = oldTasks.some(task => task.id === updatedTask.id);
-          if (exists) {
-            // Update existing task
-            return oldTasks.map(task => task.id === updatedTask.id ? updatedTask : task);
-          } else {
-            // Add new task if it somehow wasn't there (e.g., moved into this project)
-            return [...oldTasks, updatedTask];
-          }
-        });
-      } else {
-        // If the updated task *does not* belong to the current project, remove it
-        // This handles cases where a task was moved *out* of the current project
-        queryClient.setQueryData<Task[]>(currentProjectTasksKey, (oldTasks) => {
-          return oldTasks?.filter(task => task.id !== updatedTask.id) || [];
-        });
-      }
-      // Invalidate the cache for the project the task *now* belongs to.
-      // This is a fallback to ensure consistency, especially if another client
-      // isn't actively using setQueryData on that specific query key.
-      queryClient.invalidateQueries({ queryKey: ['tasks', updatedTask.projectId] });
-    });
-
-
-    // Listener for 'taskDeleted' events
-    socket.on('taskDeleted', (deletedTask: { id: string; projectId: string }) => {
-      console.log('Real-time: Task Deleted', deletedTask.id);
-      if (deletedTask.projectId === projectId) {
-        queryClient.setQueryData<Task[]>(['tasks', projectId], (oldTasks) => {
-          return oldTasks?.filter(task => task.id !== deletedTask.id) || [];
-        });
-      }
-    });
-
-    // Clean up on component unmount or projectId change
+    const handleTaskEvent = (_event: string, _taskData: Task | { id: string; projectId: string }) => {
+        queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+    };
+    socket.on('taskCreated', (task: Task) => handleTaskEvent('taskCreated', task));
+    socket.on('taskUpdated', (task: Task) => handleTaskEvent('taskUpdated', task));
+    socket.on('taskDeleted', (task: { id: string; projectId: string }) => handleTaskEvent('taskDeleted', task));
     return () => {
       socket.emit('leaveProject', projectId);
       socket.off('taskCreated');
       socket.off('taskUpdated');
       socket.off('taskDeleted');
     };
-  }, [projectId, queryClient]); // Re-run effect if projectId or queryClient instance changes
+  }, [projectId, queryClient]);
 
-  // Mutation for deleting a task
   const deleteTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
       await api.delete(`/tasks/${taskId}`);
     },
     onSuccess: () => {
-      // The Socket.IO 'taskDeleted' listener will handle the cache update.
-      // This invalidate here is a fallback for robustness.
-      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+      setIsConfirmDeleteDialogOpen(false);
+      setTaskToDelete(null);
     },
     onError: (error: any) => {
       console.error('Delete task error:', error);
       alert(`Failed to delete task: ${error.response?.data?.message || error.message}`);
+      setIsConfirmDeleteDialogOpen(false);
+      setTaskToDelete(null);
     },
   });
 
-  const handleDeleteTask = (taskId: string) => {
-    if (window.confirm('Are you sure you want to delete this task?')) {
-      deleteTaskMutation.mutate(taskId);
+  const openDeleteConfirmDialogForTask = useCallback((task: Task) => {
+    setTaskToDelete(task);
+    setIsConfirmDeleteDialogOpen(true);
+  }, []);
+
+  const handleConfirmTaskDelete = useCallback(() => {
+    if (taskToDelete) {
+      deleteTaskMutation.mutate(taskToDelete.id);
     }
-  };
+  }, [taskToDelete, deleteTaskMutation]);
 
-  // RBAC Helpers for tasks
   const canCreateTask = user && ['Admin', 'Project Manager', 'Developer'].includes(user.role);
-
   const canEditTask = (task: Task) => user && (
-    ['Admin', 'Project Manager'].includes(user.role) || // Admins/PMs can edit any task
-    (task.assignedTo === user.id && user.role === 'Developer') || // Devs can edit their assigned tasks
-    (task.reportedBy === user.id) // Users can edit tasks they reported
+    ['Admin', 'Project Manager'].includes(user.role) ||
+    (task.assignedTo === user.id && user.role === 'Developer') ||
+    (task.reportedBy === user.id)
   );
-
   const canDeleteTask = (task: Task) => user && (
-    ['Admin', 'Project Manager'].includes(user.role) || // Admins/PMs can delete any task
-    (task.reportedBy === user.id) // Users can delete tasks they reported
+    ['Admin', 'Project Manager'].includes(user.role) ||
+    (task.reportedBy === user.id)
   );
 
-  if (isProjectLoading || isTasksLoading) return <div className="text-center text-lg">Loading project and tasks...</div>;
-  if (isProjectError) return <div className="text-center text-lg text-red-600">Error loading project: {projectError?.message}</div>;
-  if (isTasksError) return <div className="text-center text-lg text-red-600">Error loading tasks: {tasksError?.message}</div>;
-  if (!project) return <div className="text-center text-lg text-gray-700">Project not found.</div>;
+  const isLoading = isProjectLoading || (isTasksLoading && !tasks); // Show loading if project is loading or tasks are loading initially
+  const isError = isProjectError || (isTasksError && !tasks); // Show error if project errored or tasks errored initially
+  const combinedError = projectError || tasksError;
+
+  if (isLoading) return (
+    <div className="min-h-[calc(100vh-200px)] flex flex-col items-center justify-center text-slate-600">
+        <svg className="animate-spin h-10 w-10 text-blue-600 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <p className="text-lg font-medium">Loading Project Details...</p>
+    </div>
+  );
+
+  if (isError) return (
+    <div className="min-h-[calc(100vh-200px)] flex flex-col items-center justify-center text-red-600 bg-red-50 p-8 rounded-lg">
+        <ExclamationTriangleIcon className="h-12 w-12 text-red-500 mb-4" />
+        <p className="text-xl font-semibold mb-2">Error Loading Project</p>
+        <p className="text-sm text-red-700 text-center mb-4">{combinedError?.message || "An unexpected error occurred."}</p>
+         <button 
+          onClick={() => queryClient.refetchQueries({ queryKey: ['project', projectId] })}
+          className="px-4 py-2 bg-red-500 text-white text-sm font-medium rounded-md hover:bg-red-600 transition-colors"
+        >
+          Try Again
+        </button>
+    </div>
+  );
+  if (!project) return (
+    <div className="min-h-[calc(100vh-200px)] flex flex-col items-center justify-center text-slate-600">
+        <BriefcaseIcon className="h-12 w-12 text-slate-400 mb-4" />
+        <p className="text-xl font-semibold mb-2">Project Not Found</p>
+        <p className="text-sm text-slate-500">The project you are looking for does not exist or you may not have access.</p>
+        <Link to="/dashboard/projects" className="mt-4 px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-md hover:bg-blue-600 transition-colors">
+          Go Back to Projects
+        </Link>
+    </div>
+  );
 
   return (
-    <div className="container mx-auto p-4">
-      <Link to="/dashboard/projects" className="text-blue-600 hover:underline mb-4 inline-block">
-        &larr; Back to Projects
-      </Link>
+    <div className="min-h-screen bg-slate-100 text-slate-800 selection:bg-blue-500 selection:text-white">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+        <Link 
+          to="/dashboard/projects" 
+          className="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-md transition-colors mb-6 sm:mb-8 group"
+        >
+          <ArrowLeftIcon className="h-4 w-4 mr-2 transform transition-transform group-hover:-translate-x-0.5" />
+          Back to Projects
+        </Link>
 
-      {/* Project Details */}
-      <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">{project.name}</h1>
-        <p className="text-gray-600 text-lg mb-4">{project.description || 'No description provided.'}</p>
-        <div className="flex justify-between items-center text-sm text-gray-500 border-t pt-4">
-          <span>Status: <span className={`font-medium ${project.status === 'Completed' ? 'text-green-600' : project.status === 'In Progress' ? 'text-blue-600' : 'text-gray-600'}`}>{project.status}</span></span>
-          <span>Created By: {project.creator?.username || 'N/A'}</span>
-          <span>Created: {new Date(project.createdAt).toLocaleDateString()}</span>
+        <div className="bg-white p-6 sm:p-8 rounded-xl shadow-xl mb-8 md:mb-10">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between">
+            <div>
+              <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-2">{project.name}</h1>
+              <p className="text-slate-600 text-base mb-5 max-w-3xl">{project.description || 'No description provided for this project.'}</p>
+            </div>
+            <div className={`flex-shrink-0 mt-4 md:mt-0 md:ml-6 inline-flex items-center px-3.5 py-1.5 rounded-full text-sm font-semibold border ${getProjectStatusStyles(project.status)}`}>
+              {project.status === 'Completed' && <CheckCircleIcon className="h-5 w-5 mr-1.5" />}
+              {project.status === 'In Progress' && <BoltIcon className="h-5 w-5 mr-1.5" />}
+              {project.status === 'Blocked' && <NoSymbolIcon className="h-5 w-5 mr-1.5" />}
+              {project.status === 'Not Started' && <ListBulletIcon className="h-5 w-5 mr-1.5" />}
+              {project.status}
+            </div>
+          </div>
+          <div className="mt-5 pt-5 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3 text-sm text-slate-500">
+            <div className="flex items-center">
+              <UserCircleIcon className="h-5 w-5 mr-2 text-slate-400" />
+              <span>Created by: <span className="font-medium text-slate-700">{project.creator?.username || 'N/A'}</span></span>
+            </div>
+            <div className="flex items-center">
+              <CalendarDaysIcon className="h-5 w-5 mr-2 text-slate-400" />
+              <span>Created: <span className="font-medium text-slate-700">{new Date(project.createdAt).toLocaleDateString()}</span></span>
+            </div>
+             <div className="flex items-center">
+              <ClockIcon className="h-5 w-5 mr-2 text-slate-400" />
+              <span>Last Updated: <span className="font-medium text-slate-700">{new Date(project.updatedAt).toLocaleDateString()}</span></span>
+            </div>
+          </div>
+        </div>
+
+        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 sm:mb-8 gap-4">
+          <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">Tasks</h2>
+          {canCreateTask && (
+            <button
+              onClick={() => setIsCreateTaskModalOpen(true)}
+              className="flex items-center px-5 py-2.5 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-100 transition-colors duration-150 ease-in-out text-sm font-medium"
+            >
+              <PlusIcon className="h-5 w-5 mr-2 -ml-1" />
+              Create New Task
+            </button>
+          )}
+        </header>
+
+        {isTasksLoading && tasks && (
+          <div className="text-center text-sm text-slate-500 mb-4 py-2">Refreshing tasks...</div>
+        )}
+        {isTasksError && tasks && (
+           <div className="text-center text-sm text-red-500 mb-4 py-2 bg-red-50 rounded-md">
+            <ExclamationTriangleIcon className="inline h-4 w-4 mr-1" />
+            Could not refresh tasks. Displaying cached data.
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+          {tasks?.length === 0 ? (
+            <div className="lg:col-span-2 xl:col-span-3 text-center py-16 flex flex-col items-center justify-center bg-white rounded-xl shadow-md">
+              <ArchiveBoxXMarkIcon className="h-16 w-16 text-slate-400 mb-4" />
+              <p className="text-xl font-medium text-slate-600 mb-1">No Tasks Yet</p>
+              <p className="text-slate-500">
+                {canCreateTask ? "Be the first to add a task to this project!" : "There are currently no tasks assigned to this project."}
+              </p>
+            </div>
+          ) : (
+            tasks?.map((task) => (
+              <div key={task.id} className="bg-white rounded-xl shadow-lg hover:shadow-xl border border-slate-200/80 transition-all duration-300 ease-in-out flex flex-col overflow-hidden">
+                <div className="p-5 sm:p-6 flex-grow">
+                  <div className="flex justify-between items-start mb-3">
+                    <h3 className="text-lg font-semibold text-slate-800 line-clamp-2 break-words">{task.title}</h3>
+                    {(canEditTask(task) || canDeleteTask(task)) && (
+                      <div className="flex-shrink-0 flex space-x-1.5">
+                        {canEditTask(task) && (
+                          <button
+                            onClick={() => { setSelectedTask(task); setIsEditTaskModalOpen(true); }}
+                            className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+                            title="Edit Task"
+                          >
+                            <PencilSquareIcon className="h-5 w-5" />
+                          </button>
+                        )}
+                        {canDeleteTask(task) && (
+                          <button
+                            onClick={() => openDeleteConfirmDialogForTask(task)}
+                            className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1"
+                            title="Delete Task"
+                            disabled={deleteTaskMutation.isPending && deleteTaskMutation.variables === task.id}
+                          >
+                            <TrashIcon className="h-5 w-5" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-slate-600 text-sm mb-4 line-clamp-3">{task.description || 'No description provided.'}</p>
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${getTaskStatusStyles(task.status)}`}>
+                      {task.status === 'Done' && <CheckCircleIcon className="h-3.5 w-3.5 mr-1" />}
+                      {task.status === 'In Progress' && <BoltIcon className="h-3.5 w-3.5 mr-1" />}
+                      {task.status === 'Blocked' && <NoSymbolIcon className="h-3.5 w-3.5 mr-1" />}
+                      {task.status === 'To Do' && <ListBulletIcon className="h-3.5 w-3.5 mr-1" />}
+                      {task.status}
+                    </span>
+                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${getTaskPriorityStyles(task.priority)}`}>
+                      <FlagIcon className="h-3.5 w-3.5 mr-1" />
+                      {task.priority}
+                    </span>
+                  </div>
+                </div>
+                <div className="px-5 sm:px-6 py-4 bg-slate-50 border-t border-slate-200/80 text-xs text-slate-500 space-y-1.5">
+                  <div className="flex items-center">
+                    <UserCircleIcon className="h-4 w-4 mr-1.5 text-slate-400" />
+                    Assignee: <span className="font-medium text-slate-600 ml-1">{task.assignee?.username || 'Unassigned'}</span>
+                  </div>
+                  <div className="flex items-center">
+                    <TagIcon className="h-4 w-4 mr-1.5 text-slate-400" />
+                    Reporter: <span className="font-medium text-slate-600 ml-1">{task.reporter?.username || 'N/A'}</span>
+                  </div>
+                  {task.deadline && (
+                    <div className="flex items-center">
+                      <CalendarDaysIcon className="h-4 w-4 mr-1.5 text-slate-400" />
+                      Deadline: <span className="font-medium text-slate-600 ml-1">{new Date(task.deadline).toLocaleDateString()}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
-      {/* Tasks Section */}
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">Tasks</h2>
-        {canCreateTask && (
-          <button
-            onClick={() => setIsCreateTaskModalOpen(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-          >
-            Create New Task
-          </button>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 gap-4">
-        {tasks?.length === 0 ? (
-          <p className="text-center text-gray-500">No tasks found for this project. {canCreateTask && "Start by creating one!"}</p>
-        ) : (
-          tasks?.map((task) => (
-            <div key={task.id} className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow relative">
-              <h3 className="text-lg font-semibold text-gray-800">{task.title}</h3>
-              <p className="text-gray-600 text-sm mb-2">{task.description || 'No description.'}</p>
-              <div className="flex justify-between items-center text-xs text-gray-500">
-                <span>Status: <span className="font-medium">{task.status}</span></span>
-                <span>Priority: <span className="font-medium">{task.priority}</span></span>
-                <span>Assignee: {task.assignee?.username || 'Unassigned'}</span>
-                <span>Reporter: {task.reporter?.username || 'N/A'}</span>
-                {task.deadline && <span>Deadline: {new Date(task.deadline).toLocaleDateString()}</span>}
-              </div>
-
-              {/* Task Action Buttons */}
-              {(canEditTask(task) || canDeleteTask(task)) && (
-                  <div className="absolute top-4 right-4 flex space-x-2">
-                      {canEditTask(task) && (
-                          <button
-                              onClick={() => { setSelectedTask(task); setIsEditTaskModalOpen(true); }}
-                              className="text-blue-500 hover:text-blue-700 p-1 rounded-full hover:bg-gray-100 transition-colors"
-                              title="Edit Task"
-                          >
-                              {/* Edit icon */}
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                  <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.38-2.828-2.828z" />
-                              </svg>
-                          </button>
-                      )}
-                      {canDeleteTask(task) && (
-                          <button
-                              onClick={() => handleDeleteTask(task.id)}
-                              className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-gray-100 transition-colors"
-                              title="Delete Task"
-                              disabled={deleteTaskMutation.isPending}
-                          >
-                              {/* Delete icon */}
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                  <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1zm1 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" clipRule="evenodd" />
-                              </svg>
-                          </button>
-                      )}
-                  </div>
-              )}
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Create Task Modal */}
+      {isCreateTaskModalOpen && project && (
+         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" aria-hidden="true" />
+      )}
       {isCreateTaskModalOpen && project && (
         <CreateTaskForm
           projectId={project.id}
@@ -271,11 +373,25 @@ const ProjectDetailPage: React.FC = () => {
         />
       )}
 
-      {/* Edit Task Modal */}
+      {isEditTaskModalOpen && selectedTask && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" aria-hidden="true" />
+      )}
       {isEditTaskModalOpen && selectedTask && (
         <EditTaskForm
           task={selectedTask}
           onClose={() => { setIsEditTaskModalOpen(false); setSelectedTask(null); }}
+        />
+      )}
+
+      {taskToDelete && (
+        <ConfirmDeleteDialog
+            isOpen={isConfirmDeleteDialogOpen}
+            onClose={() => { setIsConfirmDeleteDialogOpen(false); setTaskToDelete(null); }}
+            onConfirm={handleConfirmTaskDelete}
+            title="Confirm Task Deletion"
+            message="Are you sure you want to delete this task? This action cannot be undone."
+            itemName={taskToDelete.title}
+            isDeleting={deleteTaskMutation.isPending}
         />
       )}
     </div>

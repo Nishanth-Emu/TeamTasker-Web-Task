@@ -5,9 +5,9 @@ import api from '../api/axios';
 import { useAuth } from '../context/AuthContext'; 
 import CreateProjectForm from '../components/projects/CreateProjectForm'; 
 import EditProjectForm from '../components/projects/EditProjectForm';
+import ConfirmDeleteDialog from '../components/common/ConfirmDeleteDialog'; 
 import { io } from 'socket.io-client';
 
-// Heroicons
 import {
   PencilSquareIcon,
   TrashIcon,
@@ -58,9 +58,12 @@ const ProjectsPage: React.FC = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
 
+  const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+
   const [filterStatus, setFilterStatus] = useState<string>('All');
   const [sortBy, setSortBy] = useState<string>('createdAt');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc'); // Logic was present
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState<string>('');
 
@@ -76,7 +79,7 @@ const ProjectsPage: React.FC = () => {
       if (filterStatus !== 'All') params.append('status', filterStatus);
       if (debouncedSearchTerm.trim()) params.append('search', debouncedSearchTerm.trim());
       params.append('sortBy', sortBy);
-      params.append('sortOrder', sortOrder); // Used in query
+      params.append('sortOrder', sortOrder);
       const response = await api.get(`/projects?${params.toString()}`);
       return response.data;
     },
@@ -85,17 +88,14 @@ const ProjectsPage: React.FC = () => {
   });
 
   useEffect(() => {
-    const handleProjectChange = (action: string, data: any) => {
-      console.log(`Real-time: Project ${action}`, data);
+    const handleProjectChange = (_action: string, _data: any) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     };
-
-    socket.on('connect', () => console.log('Socket.IO Connected for Projects'));
-    socket.on('disconnect', () => console.log('Socket.IO Disconnected for Projects'));
+    socket.on('connect', () => {});
+    socket.on('disconnect', () => {});
     socket.on('projectCreated', (d: Project) => handleProjectChange('Created', d));
     socket.on('projectUpdated', (d: Project) => handleProjectChange('Updated', d));
     socket.on('projectDeleted', (d: { id: string }) => handleProjectChange('Deleted', d));
-
     return () => {
       socket.off('connect');
       socket.off('disconnect');
@@ -109,29 +109,37 @@ const ProjectsPage: React.FC = () => {
     mutationFn: (projectId: string) => api.delete(`/projects/${projectId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
+      setIsConfirmDeleteDialogOpen(false);
+      setProjectToDelete(null);
     },
     onError: (err: any) => {
       console.error('Delete project error:', err);
+      // You might want a more user-friendly error display here too, like a toast notification
       alert(`Failed to delete project: ${err.response?.data?.message || err.message}`);
+      setIsConfirmDeleteDialogOpen(false); // Still close dialog on error, or keep it open for retry? User decision.
+      setProjectToDelete(null);
     },
   });
 
-  const handleDeleteProject = useCallback((projectId: string) => {
-    if (window.confirm('Are you sure you want to delete this project and all its associated tasks? This action cannot be undone.')) {
-      deleteProjectMutation.mutate(projectId);
+  const openDeleteConfirmDialog = useCallback((project: Project) => {
+    setProjectToDelete(project);
+    setIsConfirmDeleteDialogOpen(true);
+  }, []);
+
+  const handleConfirmDelete = useCallback(() => {
+    if (projectToDelete) {
+      deleteProjectMutation.mutate(projectToDelete.id);
     }
-  }, [deleteProjectMutation]);
+  }, [projectToDelete, deleteProjectMutation]);
 
   const handleEditProject = useCallback((project: Project) => {
     setSelectedProject(project);
     setIsEditModalOpen(true);
   }, []);
-
-  // The handleSortOrderChange callback was in your original code and is correct
+  
   const handleSortOrderChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
     setSortOrder(e.target.value as 'asc' | 'desc');
   }, []);
-
 
   const commonInputClasses = "form-input block w-full py-2.5 px-4 border border-slate-300 bg-white rounded-lg shadow-sm placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none sm:text-sm transition-colors duration-150 ease-in-out";
   const commonSelectClasses = "form-select block w-full py-2.5 pl-4 pr-10 border border-slate-300 bg-white rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none sm:text-sm appearance-none transition-colors duration-150 ease-in-out";
@@ -140,7 +148,7 @@ const ProjectsPage: React.FC = () => {
   const filteringControls = useMemo(() => (
     <div className="bg-white p-5 sm:p-6 rounded-xl shadow-lg mb-8">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4 items-end">
-        <div className="relative col-span-1 sm:col-span-2 lg:col-span-1"> {/* Adjusted span for search */}
+        <div className="relative col-span-1 sm:col-span-2 lg:col-span-1">
           <label htmlFor="search-projects" className={commonLabelClasses}>Search Projects</label>
           <MagnifyingGlassIcon className="absolute left-3 top-1/2 mt-[1px] h-5 w-5 text-slate-400 pointer-events-none transform -translate-y-1/2" />
           <input
@@ -178,13 +186,13 @@ const ProjectsPage: React.FC = () => {
             <ChevronDownIcon className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 pointer-events-none" />
           </div>
         </div>
-        <div> {/* <<<< REINSTATED SORT ORDER CONTROL >>>> */}
+        <div>
           <label htmlFor="sort-order" className={commonLabelClasses}>Order</label>
           <div className="relative">
             <select
                 id="sort-order"
                 value={sortOrder}
-                onChange={handleSortOrderChange} // Using the existing callback
+                onChange={handleSortOrderChange}
                 className={commonSelectClasses}
             >
               <option value="desc">Descending</option>
@@ -196,13 +204,11 @@ const ProjectsPage: React.FC = () => {
       </div>
     </div>
   ), [searchTerm, filterStatus, sortBy, sortOrder, handleSortOrderChange, commonInputClasses, commonSelectClasses, commonLabelClasses]);
-  // Added handleSortOrderChange to dependency array for useMemo
 
   const canCreateProject = useMemo(() => user && ['Admin', 'Project Manager'].includes(user.role), [user]);
   const canEditOrDeleteProject = useCallback((project: Project) =>
     user && (['Admin', 'Project Manager'].includes(user.role) || (project.createdBy === user.id)), [user]
   );
-
 
   const projectCards = useMemo(() => {
     if (!projects || projects.length === 0) {
@@ -243,7 +249,7 @@ const ProjectsPage: React.FC = () => {
                   <PencilSquareIcon className="h-5 w-5" />
                 </button>
                 <button
-                  onClick={() => handleDeleteProject(project.id)}
+                  onClick={() => openDeleteConfirmDialog(project)}
                   className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1"
                   title="Delete Project"
                   disabled={deleteProjectMutation.isPending && deleteProjectMutation.variables === project.id}
@@ -280,7 +286,7 @@ const ProjectsPage: React.FC = () => {
         </div>
       </div>
     ));
-  }, [projects, canEditOrDeleteProject, handleEditProject, handleDeleteProject, deleteProjectMutation.isPending, deleteProjectMutation.variables, filterStatus, debouncedSearchTerm, canCreateProject]);
+  }, [projects, canEditOrDeleteProject, handleEditProject, openDeleteConfirmDialog, deleteProjectMutation.isPending, deleteProjectMutation.variables, filterStatus, debouncedSearchTerm, canCreateProject]);
 
 
   if (isLoading && !projects) return (
@@ -345,19 +351,25 @@ const ProjectsPage: React.FC = () => {
       </div>
 
       {isCreateModalOpen && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" aria-hidden="true" />
-      )}
-      {isCreateModalOpen && (
         <CreateProjectForm onClose={() => setIsCreateModalOpen(false)} />
       )}
 
       {isEditModalOpen && selectedProject && (
-         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" aria-hidden="true" />
-      )}
-      {isEditModalOpen && selectedProject && (
         <EditProjectForm
           project={selectedProject}
           onClose={() => { setIsEditModalOpen(false); setSelectedProject(null); }}
+        />
+      )}
+
+      {projectToDelete && (
+        <ConfirmDeleteDialog
+            isOpen={isConfirmDeleteDialogOpen}
+            onClose={() => { setIsConfirmDeleteDialogOpen(false); setProjectToDelete(null); }}
+            onConfirm={handleConfirmDelete}
+            title="Confirm Project Deletion"
+            message="Are you sure you want to delete this project and all its associated tasks? This action cannot be undone."
+            itemName={projectToDelete.name}
+            isDeleting={deleteProjectMutation.isPending}
         />
       )}
     </div>
