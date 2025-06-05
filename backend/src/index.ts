@@ -1,5 +1,3 @@
-// existing index.ts with notification features integrated
-
 import express, { Application, Request, Response } from 'express';
 import { createServer } from 'http'; 
 import { Server as SocketIOServer } from 'socket.io';

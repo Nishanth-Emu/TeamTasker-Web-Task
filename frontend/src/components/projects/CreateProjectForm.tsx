@@ -27,7 +27,7 @@ const CreateProjectForm: React.FC<CreateProjectFormProps> = ({ onClose }) => {
     formState: { errors, isSubmitting },
     setError,
   } = useForm<CreateProjectInputs>({
-    resolver: zodResolver(createProjectSchema) as any,
+    resolver: zodResolver(createProjectSchema) as any, // Keep 'as any' if it resolves a complex resolver type issue for now
     defaultValues: {
       status: 'Not Started',
     },
@@ -64,21 +64,24 @@ const CreateProjectForm: React.FC<CreateProjectFormProps> = ({ onClose }) => {
   };
 
   const commonInputBaseClasses = "form-input block w-full py-2.5 border bg-white rounded-lg shadow-sm placeholder-slate-400 focus:ring-2 focus:outline-none sm:text-sm transition-colors duration-150 ease-in-out";
-  const commonInputWithIconPadding = "pl-10 pr-3.5"; // Standard padding for inputs with left icon
-  const commonSelectWithIconPadding = "pl-10 pr-10"; // Select needs more right padding for custom arrow
+  const commonInputWithIconPadding = "pl-10 pr-3.5";
+  const commonSelectWithIconPadding = "pl-10 pr-10";
   
   const commonLabelClasses = "block text-sm font-medium text-slate-700 mb-1.5";
   const commonErrorClasses = "mt-1.5 text-xs text-red-600 flex items-center";
 
-
   return (
     <div 
-        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" // Added bg-black/40 and backdrop-blur-sm
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-project-title"
+        onClick={onClose} // Allow closing by clicking the backdrop
     >
-      <div className="bg-white p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-lg transform transition-all">
+      <div 
+        className="bg-white p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-lg transform transition-all"
+        onClick={(e) => e.stopPropagation()} // Prevent click inside modal from closing it
+      >
         <div className="flex items-center justify-between mb-6 sm:mb-8 pb-4 border-b border-slate-200">
           <div className="flex items-center">
             <FolderPlusIcon className="h-7 w-7 text-blue-600 mr-3" />

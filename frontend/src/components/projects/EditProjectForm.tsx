@@ -54,7 +54,7 @@ const EditProjectForm: React.FC<EditProjectFormProps> = ({ project, onClose }) =
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
-      queryClient.invalidateQueries({ queryKey: ['project', project.id] }); // Also invalidate specific project if viewed elsewhere
+      queryClient.invalidateQueries({ queryKey: ['project', project.id] });
       onClose();
     },
     onError: (error: any) => {
@@ -76,13 +76,15 @@ const EditProjectForm: React.FC<EditProjectFormProps> = ({ project, onClose }) =
   const onSubmit = (data: EditProjectInputs) => {
     const payload: Partial<EditProjectInputs> = {};
     if (data.name !== project.name) payload.name = data.name;
-    if (data.description !== (project.description || '')) payload.description = data.description;
+    if (data.description !== (project.description || '')) {
+        payload.description = data.description === '' ? undefined : data.description;
+    }
     if (data.status !== project.status) payload.status = data.status;
     
     if (Object.keys(payload).length > 0) {
         updateProjectMutation.mutate(payload);
     } else {
-        onClose(); // No changes, just close
+        onClose();
     }
   };
   
@@ -95,26 +97,30 @@ const EditProjectForm: React.FC<EditProjectFormProps> = ({ project, onClose }) =
 
   return (
     <div 
-        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" 
         role="dialog"
         aria-modal="true"
         aria-labelledby="edit-project-title"
+        onClick={onClose} 
     >
-      <div className="bg-white p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-lg transform transition-all">
+      <div 
+        className="bg-white p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-lg transform transition-all"
+        onClick={(e) => e.stopPropagation()} 
+      >
         <div className="flex items-start justify-between mb-6 sm:mb-8 pb-4 border-b border-slate-200">
           <div className="flex items-center">
-            <PencilSquareIcon className="h-7 w-7 text-blue-600 mr-3" />
-            <div>
+            <PencilSquareIcon className="h-7 w-7 text-blue-600 mr-3 flex-shrink-0" />
+            <div className="min-w-0"> 
                 <h2 id="edit-project-title" className="text-xl sm:text-2xl font-semibold text-slate-800">
                 Edit Project
                 </h2>
-                <p className="text-sm text-slate-500 truncate max-w-xs sm:max-w-sm" title={project.name}>{project.name}</p>
+                <p className="text-sm text-slate-500 truncate" title={project.name}>{project.name}</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+            className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ml-2 flex-shrink-0" // Added ml-2 for spacing and flex-shrink-0
             aria-label="Close modal"
           >
             <XMarkIcon className="h-6 w-6" />

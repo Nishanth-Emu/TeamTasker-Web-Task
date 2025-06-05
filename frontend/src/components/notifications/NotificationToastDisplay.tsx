@@ -15,7 +15,7 @@ const NotificationToastDisplay: React.FC = () => {
     unreadAndUndisplayedNotifications.forEach(notification => {
       toast.info(notification.message, {
         id: `toast_${notification.id}`,
-        duration: 5000,
+        duration: 4000,
         action: notification.link ? {
           label: 'View',
           onClick: () => {
