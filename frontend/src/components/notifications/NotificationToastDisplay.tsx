@@ -1,31 +1,30 @@
-import React from 'react';
-import { XMarkIcon } from '@heroicons/react/20/solid'; // Assuming you use heroicons
-import { useSocket, type Notification } from '../../context/SocketContext'; // Import useSocket and Notification interface
-import { useMutation, useQueryClient } from '@tanstack/react-query'; // For marking as read on backend
-import { markNotificationAsRead } from '../../api/notification.api'; // We'll create this API call next
-import { useNavigate } from 'react-router-dom'; // Assuming you use React Router
+import React, { useState, useEffect } from 'react';
+import { XMarkIcon } from '@heroicons/react/20/solid';
+import { useSocket, type Notification } from '../../context/SocketContext';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { markNotificationAsRead } from '../../api/notification.api';
+import { useNavigate } from 'react-router-dom';
 
 interface NotificationToastProps {
   notification: Notification;
+  onClose: (id: string) => void;
 }
 
-const NotificationToast: React.FC<NotificationToastProps> = ({ notification }) => {
+const NotificationToast: React.FC<NotificationToastProps> = ({ notification, onClose }) => {
   const queryClient = useQueryClient();
-  const { markNotificationAsReadLocally } = useSocket(); // Get local update function
+  const { markNotificationAsReadLocally } = useSocket();
   const navigate = useNavigate();
 
   const markAsReadMutation = useMutation({
     mutationFn: (notificationId: string) => markNotificationAsRead(notificationId),
     onSuccess: (_data, notificationId) => {
       console.log('Notification marked as read on backend:', notificationId);
-      // Invalidate the query for all notifications to refetch updated list
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
-      // Also update the local state in SocketContext immediately
       markNotificationAsReadLocally(notificationId);
+      onClose(notificationId);
     },
     onError: (error) => {
       console.error('Error marking notification as read:', error);
-      // Potentially show an error message to the user
     },
   });
 
@@ -36,10 +35,11 @@ const NotificationToast: React.FC<NotificationToastProps> = ({ notification }) =
   };
 
   const handleClick = () => {
-    handleMarkAsRead(); // Mark as read when clicked
+    handleMarkAsRead();
     if (notification.link) {
-      navigate(notification.link); // Navigate to the linked task/project
+      navigate(notification.link);
     }
+    onClose(notification.id);
   };
 
   const timeSince = (dateString: string) => {
@@ -58,7 +58,6 @@ const NotificationToast: React.FC<NotificationToastProps> = ({ notification }) =
     if (interval > 1) return Math.floor(interval) + " minutes ago";
     return Math.floor(seconds) + " seconds ago";
   };
-
 
   return (
     <div
@@ -89,14 +88,41 @@ const NotificationToast: React.FC<NotificationToastProps> = ({ notification }) =
 };
 
 const NotificationToastDisplay: React.FC = () => {
-  const { notifications: realTimeNotifications } = useSocket(); // Get real-time notifications from context
+  const { notifications: realTimeNotifications } = useSocket();
+  const [visibleNotifications, setVisibleNotifications] = useState<Notification[]>([]);
+
+  useEffect(() => {
+    if (realTimeNotifications.length > 0) {
+      const latestNotification = realTimeNotifications[0];
+      if (!visibleNotifications.some(notif => notif.id === latestNotification.id)) {
+        setVisibleNotifications((prevVisible) => {
+          const newVisible = [latestNotification, ...prevVisible];
+
+          setTimeout(() => {
+            handleCloseToast(latestNotification.id);
+          }, 6000);
+
+          return newVisible;
+        });
+      }
+    }
+  }, [realTimeNotifications]);
+
+  const handleCloseToast = (idToClose: string) => {
+    setVisibleNotifications((prevVisible) =>
+      prevVisible.filter((notif) => notif.id !== idToClose)
+    );
+  };
 
   return (
     <div className="fixed bottom-4 right-4 z-50 w-80 max-h-[80vh] overflow-y-auto p-2 bg-transparent pointer-events-none">
       <div className="space-y-3">
-        {realTimeNotifications.map((notif) => (
-          <div key={notif.id} className="pointer-events-auto"> {/* Make individual toasts interactive */}
-            <NotificationToast notification={notif} />
+        {visibleNotifications.map((notif) => (
+          <div key={notif.id} className="pointer-events-auto">
+            <NotificationToast
+              notification={notif}
+              onClose={handleCloseToast}
+            />
           </div>
         ))}
       </div>

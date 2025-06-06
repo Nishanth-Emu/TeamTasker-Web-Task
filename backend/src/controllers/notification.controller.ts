@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
 import Notification from '../models/Notification'; 
-import { Op } from 'sequelize'; // For Sequelize operators like 'not' or 'in'
 
 interface CustomRequest extends Request {
   user?: {
