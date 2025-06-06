@@ -58,7 +58,7 @@ const UsersPage: React.FC = () => {
   const { data: users, isLoading, isError, error } = useQuery<User[], Error>({
     queryKey: ['users'],
     queryFn: async () => {
-      const response = await api.get('/users');
+      const response = await api.get('/users/all-details');
       return response.data;
     },
     staleTime: 60000,

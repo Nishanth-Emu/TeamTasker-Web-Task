@@ -10,7 +10,7 @@ import {
   deleteUser,
   getAdminOrPmData,
   getAdminOnlyData
-} from '../controllers/user.controller'; // Adjust path if necessary
+} from '../controllers/user.controller'; 
 
 const router = Router();
 
@@ -18,7 +18,7 @@ const router = Router();
 router.get('/me', protect, getMe);
 
 // Get all users with full details (Admin and Project Manager only)
-router.get('/', protect, authorize(['Admin', 'Project Manager']), getAllUsers);
+router.get('/all-details', protect, authorize(['Admin', 'Project Manager']), getAllUsers);
 
 // Get users for task assignment (limited info)
 router.get('/', protect, authorize(['Admin', 'Project Manager', 'Developer', 'Tester']), getUsersForAssignment);

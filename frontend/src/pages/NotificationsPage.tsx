@@ -1,13 +1,13 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification } from '../api/notification.api';
 import type { Notification } from '../context/SocketContext';
+import { useSocket } from '../context/SocketContext';
 import { Link } from 'react-router-dom';
 import ConfirmDeleteDialog from '../components/common/ConfirmDeleteDialog';
 
 import {
   BellIcon,
-  EnvelopeOpenIcon,
   ArrowPathIcon,
   TrashIcon,
   EyeIcon,
@@ -18,6 +18,7 @@ import {
 
 const NotificationsPage: React.FC = () => {
   const queryClient = useQueryClient();
+  const { markAllAsReadLocally } = useSocket();
 
   const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
   const [notificationToDelete, setNotificationToDelete] = useState<Notification | null>(null);
@@ -41,6 +42,7 @@ const NotificationsPage: React.FC = () => {
     mutationFn: markAllNotificationsAsRead,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      markAllAsReadLocally();
     },
     onError: (err) => console.error("Failed to mark all notifications as read:", err),
   });
@@ -54,11 +56,18 @@ const NotificationsPage: React.FC = () => {
     },
     onError: (err) => {
       console.error("Failed to delete notification:", err);
-      // Optionally show a toast or an in-dialog error message
       setIsConfirmDeleteDialogOpen(false);
       setNotificationToDelete(null);
     },
   });
+
+  useEffect(() => {
+    const hasUnread = notifications?.some(n => !n.isRead);
+
+    if (hasUnread) {
+      markAllReadMutation.mutate();
+    }
+  }, [notifications]);
 
   const handleMarkAsRead = useCallback((id: string) => {
     if (notifications?.find(n => n.id === id && !n.isRead)) {
@@ -128,14 +137,6 @@ const NotificationsPage: React.FC = () => {
             </div>
             <div className="flex items-center space-x-3 flex-shrink-0 w-full sm:w-auto">
               <button
-                onClick={() => markAllReadMutation.mutate()}
-                disabled={markAllReadMutation.isPending || unreadNotificationsCount === 0}
-                className="w-1/2 sm:w-auto flex items-center justify-center px-4 py-2.5 bg-blue-600 text-white rounded-lg shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-100 disabled:opacity-60 transition-all text-sm font-medium"
-              >
-                <EnvelopeOpenIcon className="h-5 w-5 mr-2" />
-                Mark All Read
-              </button>
-              <button
                 onClick={() => refetch()}
                 disabled={isLoading}
                 className="w-1/2 sm:w-auto flex items-center justify-center px-4 py-2.5 bg-slate-200 text-slate-700 rounded-lg shadow-sm hover:bg-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 focus:ring-offset-slate-100 disabled:opacity-60 transition-all text-sm font-medium"
@@ -153,7 +154,7 @@ const NotificationsPage: React.FC = () => {
             Refreshing notifications...
           </div>
         )}
-         {isError && notifications && (
+          {isError && notifications && (
           <div className="mb-4 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm flex items-center">
             <ExclamationTriangleIcon className="h-5 w-5 mr-2 text-red-500" />
             Could not refresh notifications. Displaying last known data.
@@ -182,11 +183,11 @@ const NotificationsPage: React.FC = () => {
                 >
                   {!notif.isRead && (
                      <span className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-500 rounded-r-full" aria-hidden="true"></span>
-                  )}
+                   )}
                   <div className={`flex flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-3 ${!notif.isRead ? 'pl-3 sm:pl-2' : ''}`}>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center mb-1">
-                         {!notif.isRead && <span className="inline-block h-2 w-2 bg-blue-500 rounded-full mr-2 sm:hidden" aria-label="Unread"></span>}
+                          {!notif.isRead && <span className="inline-block h-2 w-2 bg-blue-500 rounded-full mr-2 sm:hidden" aria-label="Unread"></span>}
                         <p className={`text-sm font-semibold break-words ${notif.isRead ? 'text-slate-700' : 'text-blue-700'}`}>
                           {notif.message}
                         </p>

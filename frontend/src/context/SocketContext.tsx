@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
+import { getNotifications } from '../api/notification.api'; // IMPORTED
 
 export interface Notification {
   id: string;
@@ -17,6 +18,7 @@ interface SocketContextType {
   notifications: Notification[];
   addNotification: (notification: Notification) => void;
   markNotificationAsReadLocally: (notificationId: string) => void;
+  markAllAsReadLocally: () => void; // ADDED
 }
 
 const SocketContext = createContext<SocketContextType | undefined>(undefined);
@@ -29,6 +31,27 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const { user } = useAuth();
+
+  // --- ADDED: EFFECT TO FETCH INITIAL NOTIFICATIONS ---
+  useEffect(() => {
+    const fetchInitialNotifications = async () => {
+      if (user) {
+        try {
+          const initialNotifications = await getNotifications();
+          setNotifications(initialNotifications);
+        } catch (error) {
+          console.error('Failed to fetch initial notifications:', error);
+          setNotifications([]); // Set to empty array on error
+        }
+      } else {
+        // Clear notifications when user logs out
+        setNotifications([]);
+      }
+    };
+
+    fetchInitialNotifications();
+  }, [user]);
+  // ----------------------------------------------------
 
   useEffect(() => {
     if (user && user.id) {
@@ -47,22 +70,17 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
       newSocket.on('disconnect', () => {
         console.log('Socket.IO disconnected.');
-        if (user && user.id) {
-          newSocket.emit('unregisterUser', user.id);
-        }
       });
 
       newSocket.on('connect_error', (error) => {
         console.error('Socket.IO connection error:', error);
       });
+      
+      setSocket(newSocket);
 
       return () => {
         if (newSocket) {
-          if (user && user.id) {
-            newSocket.emit('unregisterUser', user.id);
-          }
           newSocket.disconnect();
-          setSocket(null);
         }
       };
     } else {
@@ -71,6 +89,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         setSocket(null);
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const addNotification = (notification: Notification) => {
@@ -84,9 +103,19 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       )
     );
   };
+  
+  // --- ADDED: NEW FUNCTION TO MARK ALL AS READ IN LOCAL STATE ---
+  const markAllAsReadLocally = () => {
+    setNotifications((prevNotifications) =>
+      prevNotifications.map((notif) =>
+        notif.isRead ? notif : { ...notif, isRead: true }
+      )
+    );
+  };
+  // -----------------------------------------------------------------
 
   return (
-    <SocketContext.Provider value={{ socket, notifications, addNotification, markNotificationAsReadLocally }}>
+    <SocketContext.Provider value={{ socket, notifications, addNotification, markNotificationAsReadLocally, markAllAsReadLocally }}>
       {children}
     </SocketContext.Provider>
   );
