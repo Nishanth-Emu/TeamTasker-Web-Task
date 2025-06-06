@@ -9,6 +9,7 @@ interface NotificationAttributes {
   message: string;
   type: 'task_assigned' | 'task_updated' | 'project_assigned' | 'general';
   itemId?: string;
+  link?: string; 
   isRead: boolean;
   createdAt?: Date;
   updatedAt?: Date;
@@ -22,6 +23,7 @@ class Notification extends Model<NotificationAttributes, NotificationCreationAtt
   public message!: string;
   public type!: 'task_assigned' | 'task_updated' | 'project_assigned' | 'general';
   public itemId?: string;
+  public link?: string; 
   public isRead!: boolean;
 
   public readonly createdAt!: Date;
@@ -56,6 +58,10 @@ Notification.init(
     itemId: {
       type: DataTypes.UUID,
       allowNull: true,
+    },
+     link: { 
+      type: DataTypes.STRING(500), 
+      allowNull: true, 
     },
     isRead: {
       type: DataTypes.BOOLEAN,

@@ -1,7 +1,10 @@
 import React, { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
-import { getNotifications } from '../api/notification.api'; // IMPORTED
+import { getNotifications } from '../api/notification.api';
+
+
+const notificationSound = new Audio('/notification.mp3');
 
 export interface Notification {
   id: string;
@@ -18,7 +21,7 @@ interface SocketContextType {
   notifications: Notification[];
   addNotification: (notification: Notification) => void;
   markNotificationAsReadLocally: (notificationId: string) => void;
-  markAllAsReadLocally: () => void; // ADDED
+  markAllAsReadLocally: () => void;
 }
 
 const SocketContext = createContext<SocketContextType | undefined>(undefined);
@@ -32,7 +35,6 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const { user } = useAuth();
 
-  // --- ADDED: EFFECT TO FETCH INITIAL NOTIFICATIONS ---
   useEffect(() => {
     const fetchInitialNotifications = async () => {
       if (user) {
@@ -41,17 +43,15 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
           setNotifications(initialNotifications);
         } catch (error) {
           console.error('Failed to fetch initial notifications:', error);
-          setNotifications([]); // Set to empty array on error
+          setNotifications([]);
         }
       } else {
-        // Clear notifications when user logs out
         setNotifications([]);
       }
     };
 
     fetchInitialNotifications();
   }, [user]);
-  // ----------------------------------------------------
 
   useEffect(() => {
     if (user && user.id) {
@@ -66,6 +66,9 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       newSocket.on('newNotification', (notification: Notification) => {
         console.log('New notification received:', notification);
         setNotifications((prevNotifications) => [notification, ...prevNotifications]);
+        notificationSound.play().catch(error => {
+          console.warn("Notification sound was blocked by the browser:", error);
+        });
       });
 
       newSocket.on('disconnect', () => {
@@ -89,7 +92,6 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         setSocket(null);
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const addNotification = (notification: Notification) => {
@@ -104,7 +106,6 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     );
   };
   
-  // --- ADDED: NEW FUNCTION TO MARK ALL AS READ IN LOCAL STATE ---
   const markAllAsReadLocally = () => {
     setNotifications((prevNotifications) =>
       prevNotifications.map((notif) =>
@@ -112,7 +113,6 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       )
     );
   };
-  // -----------------------------------------------------------------
 
   return (
     <SocketContext.Provider value={{ socket, notifications, addNotification, markNotificationAsReadLocally, markAllAsReadLocally }}>

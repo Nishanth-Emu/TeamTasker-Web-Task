@@ -79,6 +79,7 @@ export const createTask = async (req: CustomRequest, res: Response): Promise<voi
             userId: assignedTo,
             message: `You have been assigned a new task: "${title}"`,
             type: 'task_assigned', // Use 'task_assigned' as defined in your model
+            link: `/dashboard/projects/${projectId}/tasks`,
             itemId: task.id, // Store the task ID
             isRead: false, // Default from model
           });
