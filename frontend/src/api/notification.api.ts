@@ -9,6 +9,7 @@ interface NotificationResponse {
   isRead: boolean;
   createdAt: string;
   updatedAt: string;
+  link?: string;
 }
 
 export const getNotifications = async (): Promise<NotificationResponse[]> => {

@@ -4,10 +4,10 @@ import { protect } from '../middleware/auth.middleware';
 
 const router = Router();
 
-router.get('/', protect, getNotifications); 
-router.put('/:id/read', protect, markNotificationAsRead); 
-router.put('/mark-all-read', protect, markAllNotificationsAsRead)
-router.delete('/:id', protect, deleteNotification)
+router.get('/', protect, getNotifications);
+router.put('/mark-all-read', protect, markAllNotificationsAsRead); 
+router.put('/:id/read', protect, markNotificationAsRead);         
+router.delete('/:id', protect, deleteNotification);
 
 
 export default router;

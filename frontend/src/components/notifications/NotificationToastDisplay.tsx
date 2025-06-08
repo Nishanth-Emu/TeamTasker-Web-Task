@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { XMarkIcon } from '@heroicons/react/20/solid';
 import { useSocket, type Notification } from '../../context/SocketContext';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -18,13 +18,12 @@ const NotificationToast: React.FC<NotificationToastProps> = ({ notification, onC
   const markAsReadMutation = useMutation({
     mutationFn: (notificationId: string) => markNotificationAsRead(notificationId),
     onSuccess: (_data, notificationId) => {
-      console.log('Notification marked as read on backend:', notificationId);
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
       markNotificationAsReadLocally(notificationId);
       onClose(notificationId);
     },
     onError: (error) => {
-      console.error('Error marking notification as read:', error);
+      console.error('Failed to mark notification as read:', error);
     },
   });
 
@@ -66,15 +65,16 @@ const NotificationToast: React.FC<NotificationToastProps> = ({ notification, onC
       } transition-all duration-300`}
       onClick={handleClick}
     >
-      {!notification.isRead && (
-        <button
-          onClick={(e) => { e.stopPropagation(); handleMarkAsRead(); }}
-          className="absolute top-2 right-2 text-gray-500 hover:text-gray-800 p-1 rounded-full hover:bg-gray-200"
-          title="Mark as read"
-        >
-          <XMarkIcon className="h-4 w-4" />
-        </button>
-      )}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose(notification.id);
+        }}
+        className="absolute top-2 right-2 text-gray-500 hover:text-gray-800 p-1 rounded-full hover:bg-gray-200"
+        title="Close"
+      >
+        <XMarkIcon className="h-4 w-4" />
+      </button>
       <p className="font-semibold">{notification.message}</p>
       <p className="text-sm text-gray-500 mt-1">
         {notification.type === 'task_assignment' && 'New task assigned.'}
@@ -90,29 +90,42 @@ const NotificationToast: React.FC<NotificationToastProps> = ({ notification, onC
 const NotificationToastDisplay: React.FC = () => {
   const { notifications: realTimeNotifications } = useSocket();
   const [visibleNotifications, setVisibleNotifications] = useState<Notification[]>([]);
+  const [dismissedNotifications, setDismissedNotifications] = useState<Set<string>>(new Set());
+  const timersRef = useRef<Record<string, number>>({});
+
+  const handleCloseToast = useCallback((idToClose: string) => {
+    if (timersRef.current[idToClose]) {
+      clearTimeout(timersRef.current[idToClose]);
+      delete timersRef.current[idToClose];
+    }
+    setVisibleNotifications((prev) => prev.filter((n) => n.id !== idToClose));
+    setDismissedNotifications((prev) => new Set([...prev, idToClose]));
+  }, []);
 
   useEffect(() => {
-    if (realTimeNotifications.length > 0) {
-      const latestNotification = realTimeNotifications[0];
-      if (!visibleNotifications.some(notif => notif.id === latestNotification.id)) {
-        setVisibleNotifications((prevVisible) => {
-          const newVisible = [latestNotification, ...prevVisible];
-
-          setTimeout(() => {
-            handleCloseToast(latestNotification.id);
-          }, 6000);
-
-          return newVisible;
-        });
-      }
-    }
-  }, [realTimeNotifications]);
-
-  const handleCloseToast = (idToClose: string) => {
-    setVisibleNotifications((prevVisible) =>
-      prevVisible.filter((notif) => notif.id !== idToClose)
+    const newUnseenNotifications = realTimeNotifications.filter(
+      (n) => !n.isRead && 
+            !visibleNotifications.some((v) => v.id === n.id) &&
+            !dismissedNotifications.has(n.id)
     );
-  };
+
+    if (newUnseenNotifications.length > 0) {
+      setVisibleNotifications((prev) => [...prev, ...newUnseenNotifications]);
+      newUnseenNotifications.forEach((notification) => {
+        const timerId = setTimeout(() => {
+          handleCloseToast(notification.id);
+        }, 5000);
+        timersRef.current[notification.id] = timerId;
+      });
+    }
+  }, [realTimeNotifications, visibleNotifications, dismissedNotifications, handleCloseToast]);
+
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      Object.values(timers).forEach(clearTimeout);
+    };
+  }, []);
 
   return (
     <div className="fixed bottom-4 right-4 z-50 w-80 max-h-[80vh] overflow-y-auto p-2 bg-transparent pointer-events-none">

@@ -3,7 +3,7 @@ import Task from '../models/Task';
 import Project from '../models/Project';
 import User from '../models/User';
 import Notification from '../models/Notification';
-import { io, sendNotificationToUser } from '../index'; // Import the notification function
+import { io, sendNotificationToUser } from '../index';
 import { redisClient, REDIS_CACHE_TTL } from '../config/redis';
 
 interface CustomRequest extends Request {
@@ -79,7 +79,7 @@ export const createTask = async (req: CustomRequest, res: Response): Promise<voi
             userId: assignedTo,
             message: `You have been assigned a new task: "${title}"`,
             type: 'task_assigned', // Use 'task_assigned' as defined in your model
-            link: `/dashboard/projects/${projectId}/tasks`,
+            link: `/dashboard/projects/${projectId}/tasks`, // Persist the link to the DB
             itemId: task.id, // Store the task ID
             isRead: false, // Default from model
           });
@@ -88,7 +88,7 @@ export const createTask = async (req: CustomRequest, res: Response): Promise<voi
           const notificationForSocket = {
             id: newNotification.id, // Use the DB generated ID
             message: newNotification.message,
-            link: `/dashboard/projects/${projectId}/tasks/${task.id}`, // More specific link to the task
+            link: newNotification.link, // Use the link from the created notification
             projectId: projectId,
             read: newNotification.isRead,
             createdAt: newNotification.createdAt.toISOString(),
@@ -291,13 +291,15 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
             console.log(`Emitted 'taskUpdated' to old project room (for removal): ${oldProjectId}`);
         }
 
-        // Send notifications for relevant changes
+        const taskLink = `/dashboard/projects/${updatedTaskWithAssociations.projectId}/tasks`;
+
         // 1. Task assignment change notification
         if (assignedTo && assignedTo !== oldAssignedTo && assignedTo !== currentUserId) {
           const newNotification = await Notification.create({
             userId: assignedTo,
             message: `You have been assigned to task: "${updatedTaskWithAssociations.title}"`,
-            type: 'task_assigned', // Consistent type
+            type: 'task_assigned',
+            link: taskLink, // Persist link to DB
             itemId: updatedTaskWithAssociations.id,
             isRead: false,
           });
@@ -305,7 +307,7 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
           const notificationForSocket = {
             id: newNotification.id,
             message: newNotification.message,
-            link: `/dashboard/projects/${updatedTaskWithAssociations.projectId}/tasks/${updatedTaskWithAssociations.id}`,
+            link: newNotification.link, // Use link from DB object
             projectId: updatedTaskWithAssociations.projectId,
             read: newNotification.isRead,
             createdAt: newNotification.createdAt.toISOString(),
@@ -315,35 +317,13 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
           console.log(`Notification saved to DB and sent for task reassignment to user ${assignedTo}`);
         }
 
-        // 2. Status change notification (notify assignee if status changed and user is not the assignee)
-        if (status && status !== oldStatus && task.assignedTo && task.assignedTo !== currentUserId) {
-          const newNotification = await Notification.create({
-            userId: task.assignedTo,
-            message: `Task "${updatedTaskWithAssociations.title}" status changed to: ${status}`,
-            type: 'task_updated', // Use 'task_updated' type
-            itemId: updatedTaskWithAssociations.id,
-            isRead: false,
-          });
-
-          const notificationForSocket = {
-            id: newNotification.id,
-            message: newNotification.message,
-            link: `/dashboard/projects/${updatedTaskWithAssociations.projectId}/tasks/${updatedTaskWithAssociations.id}`,
-            projectId: updatedTaskWithAssociations.projectId,
-            read: newNotification.isRead,
-            createdAt: newNotification.createdAt.toISOString(),
-            type: newNotification.type
-          };
-          sendNotificationToUser(task.assignedTo, notificationForSocket);
-          console.log(`Notification saved to DB and sent for task status change to user ${task.assignedTo}`);
-        }
-
-        // 3. Notify reporter if task is completed and reporter is not the one making the change
-        if (status === 'Done' && task.reportedBy && task.reportedBy !== currentUserId) {
+        // 2. Notify reporter if task is completed and reporter is not the one making the change
+        if (status === 'Done' && oldStatus !== 'Done' && task.reportedBy && task.reportedBy !== currentUserId) {
           const newNotification = await Notification.create({
             userId: task.reportedBy,
             message: `Task "${updatedTaskWithAssociations.title}" has been completed.`,
-            type: 'task_updated', // Using 'task_updated' for completion as well
+            type: 'task_updated',
+            link: taskLink, // Persist link to DB
             itemId: updatedTaskWithAssociations.id,
             isRead: false,
           });
@@ -351,7 +331,7 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
           const notificationForSocket = {
             id: newNotification.id,
             message: newNotification.message,
-            link: `/dashboard/projects/${updatedTaskWithAssociations.projectId}/tasks/${updatedTaskWithAssociations.id}`,
+            link: newNotification.link, // Use link from DB object
             projectId: updatedTaskWithAssociations.projectId,
             read: newNotification.isRead,
             createdAt: newNotification.createdAt.toISOString(),
@@ -359,6 +339,29 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
           };
           sendNotificationToUser(task.reportedBy, notificationForSocket);
           console.log(`Notification saved to DB and sent for task completion to user ${task.reportedBy}`);
+        
+        // 3. Status change notification (handle other status changes)
+        } else if (status && status !== oldStatus && status !== 'Done' && task.assignedTo && task.assignedTo !== currentUserId) {
+          const newNotification = await Notification.create({
+            userId: task.assignedTo,
+            message: `Task "${updatedTaskWithAssociations.title}" status changed to: ${status}`,
+            type: 'task_updated',
+            link: taskLink, // Persist link to DB
+            itemId: updatedTaskWithAssociations.id,
+            isRead: false,
+          });
+
+          const notificationForSocket = {
+            id: newNotification.id,
+            message: newNotification.message,
+            link: newNotification.link, // Use link from DB object
+            projectId: updatedTaskWithAssociations.projectId,
+            read: newNotification.isRead,
+            createdAt: newNotification.createdAt.toISOString(),
+            type: newNotification.type
+          };
+          sendNotificationToUser(task.assignedTo, notificationForSocket);
+          console.log(`Notification saved to DB and sent for task status change to user ${task.assignedTo}`);
         }
     }
 
@@ -420,15 +423,16 @@ export const deleteTask = async (req: CustomRequest, res: Response): Promise<voi
       const newNotification = await Notification.create({
         userId: assignedTo,
         message: `Task "${taskTitle}" has been deleted.`,
-        type: 'general', // Or create a 'task_deleted' type in your enum if preferred
-        itemId: id, // The ID of the deleted task
+        type: 'general',
+        link: `/dashboard/projects/${projectId}/tasks`, // Persist link to DB
+        itemId: id,
         isRead: false,
       });
 
       const notificationForSocket = {
         id: newNotification.id,
         message: newNotification.message,
-        link: `/dashboard/projects/${projectId}/tasks`, // Link to the project's tasks page as the task is gone
+        link: newNotification.link, // Use link from DB object
         projectId: projectId,
         read: newNotification.isRead,
         createdAt: newNotification.createdAt.toISOString(),

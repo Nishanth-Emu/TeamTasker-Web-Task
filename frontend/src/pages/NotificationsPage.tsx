@@ -1,9 +1,11 @@
-import React, { useState, useCallback, useEffect } from 'react';
+// NotificationsPage.tsx
+
+import React, { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification } from '../api/notification.api';
-import type { Notification } from '../context/SocketContext';
+import { getNotifications, markNotificationAsRead, deleteNotification } from '../api/notification.api';
+import type { Notification } from '../context/SocketContext'; // Assuming Notification type is defined here
 import { useSocket } from '../context/SocketContext';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import ConfirmDeleteDialog from '../components/common/ConfirmDeleteDialog';
 
 import {
@@ -18,7 +20,8 @@ import {
 
 const NotificationsPage: React.FC = () => {
   const queryClient = useQueryClient();
-  const { markAllAsReadLocally } = useSocket();
+  const { markNotificationAsReadLocally } = useSocket();
+  const navigate = useNavigate();
 
   const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
   const [notificationToDelete, setNotificationToDelete] = useState<Notification | null>(null);
@@ -38,15 +41,6 @@ const NotificationsPage: React.FC = () => {
     onError: (err) => console.error("Failed to mark notification as read:", err),
   });
 
-  const markAllReadMutation = useMutation({
-    mutationFn: markAllNotificationsAsRead,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notifications'] });
-      markAllAsReadLocally();
-    },
-    onError: (err) => console.error("Failed to mark all notifications as read:", err),
-  });
-
   const deleteNotificationMutation = useMutation({
     mutationFn: (notificationId: string) => deleteNotification(notificationId),
     onSuccess: () => {
@@ -61,19 +55,15 @@ const NotificationsPage: React.FC = () => {
     },
   });
 
-  useEffect(() => {
-    const hasUnread = notifications?.some(n => !n.isRead);
-
-    if (hasUnread) {
-      markAllReadMutation.mutate();
-    }
-  }, [notifications]);
-
-  const handleMarkAsRead = useCallback((id: string) => {
-    if (notifications?.find(n => n.id === id && !n.isRead)) {
-      markAsReadMutation.mutate(id);
-    }
-  }, [notifications, markAsReadMutation]);
+  const handleMarkAsRead = (notificationId: string) => {
+    markAsReadMutation.mutate(notificationId, {
+      onSuccess: () => {
+        markNotificationAsReadLocally(notificationId);
+        // Invalidate queries again after local update and successful API call
+        queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      }
+    });
+  };
 
   const openDeleteConfirmDialog = useCallback((notification: Notification) => {
     setNotificationToDelete(notification);
@@ -85,7 +75,6 @@ const NotificationsPage: React.FC = () => {
       deleteNotificationMutation.mutate(notificationToDelete.id);
     }
   }, [notificationToDelete, deleteNotificationMutation]);
-
 
   const unreadNotificationsCount = notifications?.filter(notif => !notif.isRead).length || 0;
 
@@ -177,7 +166,7 @@ const NotificationsPage: React.FC = () => {
                   key={notif.id}
                   className={`p-4 sm:p-6 transition-all duration-200 ease-in-out ${
                     notif.isRead
-                      ? 'bg-slate-50/60 hover:bg-slate-100/70'
+                      ? 'bg-slate-50/60 hover:bg-slate-50'
                       : 'bg-white hover:bg-blue-50/30 relative'
                   }`}
                 >
@@ -196,19 +185,29 @@ const NotificationsPage: React.FC = () => {
                         {new Date(notif.createdAt).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </p>
                       {notif.link && (
-                        <Link
-                          to={notif.link}
-                          onClick={() => handleMarkAsRead(notif.id)}
-                          className="mt-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline inline-block"
+                        <a
+                          href={notif.link}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handleMarkAsRead(notif.id);
+                            console.log("Notification Link:", notif.link); // ADDED FOR DEBUGGING
+                            if (notif.link) {
+                              navigate(notif.link);
+                            }
+                          }}
+                          className="mt-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline inline-block cursor-pointer"
                         >
                           View Details
-                        </Link>
+                        </a>
                       )}
                     </div>
                     <div className="flex items-center space-x-2 flex-shrink-0 mt-3 sm:mt-0 self-end sm:self-center">
                       {!notif.isRead && (
                         <button
-                          onClick={() => handleMarkAsRead(notif.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMarkAsRead(notif.id);
+                          }}
                           disabled={markAsReadMutation.isPending && markAsReadMutation.variables === notif.id}
                           className="p-2 rounded-full text-slate-500 hover:bg-blue-100 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-colors"
                           title="Mark as Read"

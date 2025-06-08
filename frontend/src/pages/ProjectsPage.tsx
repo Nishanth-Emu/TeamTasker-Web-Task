@@ -169,7 +169,7 @@ const ProjectFilterControls: React.FC<{
                 <div>
                     <label htmlFor="filter-status-kanban" className={commonLabel}>Status</label>
                     <div className="relative">
-                        <select id="filter-status-kanban" value={props.filterStatus} onChange={(e) => props.onFilterStatusChange(e.target.value)} className={`${commonInputBase} form-select py-2 pl-3 pr-10`}>
+                        <select id="filter-status-kanban" value={props.filterStatus} onChange={(e) => props.onFilterStatusChange(e.target.value)} className={`${commonInputBase} appearance-none py-2 pl-3 pr-10`}>
                             <option value="All">All Statuses</option>
                             {KANBAN_COLUMNS.map(col => (<option key={col.id} value={col.id}>{col.title}</option>))}
                         </select>
@@ -179,7 +179,7 @@ const ProjectFilterControls: React.FC<{
                 <div>
                     <label htmlFor="sort-by" className={commonLabel}>Sort By</label>
                     <div className="relative">
-                        <select id="sort-by" value={props.sortBy} onChange={(e) => props.onSortByChange(e.target.value)} className={`${commonInputBase} form-select py-2 pl-3 pr-10`}>
+                        <select id="sort-by" value={props.sortBy} onChange={(e) => props.onSortByChange(e.target.value)} className={`${commonInputBase} appearance-none py-2 pl-3 pr-10`}>
                             <option value="updatedAt">Last Updated</option>
                             <option value="createdAt">Date Created</option>
                             <option value="name">Project Name</option>
@@ -190,7 +190,7 @@ const ProjectFilterControls: React.FC<{
                 <div>
                     <label htmlFor="sort-order" className={commonLabel}>Order</label>
                     <div className="relative">
-                        <select id="sort-order" value={props.sortOrder} onChange={(e) => props.onSortOrderChange(e.target.value as 'asc' | 'desc')} className={`${commonInputBase} form-select py-2 pl-3 pr-10`}>
+                        <select id="sort-order" value={props.sortOrder} onChange={(e) => props.onSortOrderChange(e.target.value as 'asc' | 'desc')} className={`${commonInputBase} appearance-none py-2 pl-3 pr-10`}>
                             <option value="desc">Descending</option>
                             <option value="asc">Ascending</option>
                         </select>

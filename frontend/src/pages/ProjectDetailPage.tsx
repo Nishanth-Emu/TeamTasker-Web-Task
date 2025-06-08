@@ -50,7 +50,7 @@ const getAvatarColor = (name: string) => {
     const color = tinycolor(name).saturate(20).darken(10);
     return {
       backgroundColor: color.toHexString(),
-      color: tinycolor.mostReadable(color, ['#ffffff', '#000000'])?.toHexString() || '#ffffff',
+      color: tinycolor.mostReadable(color, ['#ffffff', '#808080'])?.toHexString() || '#ffffff',
     };
 };
 
@@ -114,9 +114,16 @@ const TaskCard: React.FC<{
               </div>
             )}
         </div>
-        <p className="mb-4 flex-grow text-sm text-slate-500 line-clamp-2">{task.description}</p>
+        <p className="mb-4 flex-grow text-sm text-slate-500">{task.description}</p>
         <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-3">
-            <UserAvatar user={task.assignee} />
+            <div className="flex items-center space-x-2">
+                 <div title={`Assignee: ${task.assignee?.username || 'Unassigned'}`}>
+                    <UserAvatar user={task.assignee} />
+                </div>
+                 <div title={`Reporter: ${task.reporter?.username || 'N/A'}`}>
+                    <UserAvatar user={task.reporter} />
+                </div>
+            </div>
             <div className="flex items-center space-x-4">
                 {task.deadline && (
                     <div className="flex items-center gap-x-1.5 text-sm text-slate-600" title={`Deadline: ${new Date(task.deadline).toLocaleDateString()}`}>

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 import { getNotifications } from '../api/notification.api';
@@ -98,13 +98,16 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     setNotifications((prevNotifications) => [notification, ...prevNotifications]);
   };
 
-  const markNotificationAsReadLocally = (notificationId: string) => {
-    setNotifications((prevNotifications) =>
-      prevNotifications.map((notif) =>
-        notif.id === notificationId ? { ...notif, isRead: true } : notif
+  // In your SocketContext
+  const markNotificationAsReadLocally = useCallback((notificationId: string) => {
+    setNotifications(prev => 
+      prev.map(notification => 
+        notification.id === notificationId 
+          ? { ...notification, isRead: true }
+          : notification
       )
     );
-  };
+  }, []);
   
   const markAllAsReadLocally = () => {
     setNotifications((prevNotifications) =>

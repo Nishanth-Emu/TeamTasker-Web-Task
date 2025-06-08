@@ -1,29 +1,59 @@
-import React, { useMemo } from 'react'; // Added useMemo for derived state
+import React, { useMemo } from 'react';
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { useSocket } from '../../context/SocketContext'; // Updated import
+import { useSocket } from '../../context/SocketContext';
+import { useQuery } from '@tanstack/react-query';
+import { getNotifications } from '../../api/notification.api';
 import { BriefcaseIcon, UsersIcon, BellIcon, ArrowLeftEndOnRectangleIcon , UserCircleIcon } from '@heroicons/react/24/outline'; 
 import { BuildingOffice2Icon } from '@heroicons/react/24/solid';
 
-
 const DashboardLayout: React.FC = () => {
   const { user, logout } = useAuth();
-  const { notifications } = useSocket(); // Use useSocket from SocketContext
+  const { notifications: socketNotifications } = useSocket();
   const navigate = useNavigate();
+
+  // Fetch notifications from the server
+  const { data: serverNotifications = [] } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: getNotifications,
+    refetchOnWindowFocus: false,
+  });
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
-  // Calculate unreadCount from the notifications array
-  const unreadCount = useMemo(() => {
-    return notifications.filter(notification => !notification.isRead).length;
-  }, [notifications]);
-  
+  // Merge socket and server notifications, prioritizing socket notifications for real-time updates
+  const mergedNotifications = useMemo(() => {
+    if (socketNotifications.length === 0) {
+      return serverNotifications;
+    }
+    
+    // Create a map of socket notifications for quick lookup
+    const socketNotificationMap = new Map(
+      socketNotifications.map(notif => [notif.id, notif])
+    );
+    
+    // Merge: use socket notification if available, otherwise use server notification
+    const merged = serverNotifications.map(serverNotif => 
+      socketNotificationMap.get(serverNotif.id) || serverNotif
+    );
+    
+    // Add any new socket notifications that aren't in server notifications yet
+    const newSocketNotifications = socketNotifications.filter(
+      socketNotif => !serverNotifications.some(serverNotif => serverNotif.id === socketNotif.id)
+    );
+    
+    return [...merged, ...newSocketNotifications];
+  }, [socketNotifications, serverNotifications]);
+
+  // Calculate unread count from merged notifications
+   const unreadCount = useMemo(() => {
+    return socketNotifications.filter(notification => !notification.isRead).length;
+  }, [socketNotifications]);
 
   const navLinkClasses = "flex items-center px-3 py-2 text-sm font-medium text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all duration-150 ease-in-out";
-  // const activeNavLinkClasses = "flex items-center px-3 py-2 text-sm font-medium text-blue-600 bg-blue-100 rounded-lg transition-all duration-150 ease-in-out"; // Example, logic not implemented here
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col text-slate-800 selection:bg-blue-500 selection:text-white">
@@ -86,11 +116,6 @@ const DashboardLayout: React.FC = () => {
           <Outlet />
         </div>
       </main>
-      
-      {/* Optional Footer Example */}
-      {/* <footer className="py-4 border-t border-slate-200 bg-white text-center text-xs text-slate-500">
-        © {new Date().getFullYear()} TeamTasker. All rights reserved.
-      </footer> */}
     </div>
   );
 };
