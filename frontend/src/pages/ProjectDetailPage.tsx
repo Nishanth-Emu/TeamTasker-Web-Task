@@ -1,400 +1,347 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import tinycolor from 'tinycolor2';
+import { io } from 'socket.io-client';
+
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
-import { io } from 'socket.io-client';
 import CreateTaskForm from '../components/tasks/CreateTaskForm';
 import EditTaskForm from '../components/tasks/EditTaskForm';
 import ConfirmDeleteDialog from '../components/common/ConfirmDeleteDialog';
 
 import {
-  ArrowLeftIcon,
-  BriefcaseIcon,
-  UserCircleIcon,
-  CalendarDaysIcon,
-  ClockIcon,
-  TagIcon,
-  FlagIcon,
-  PlusIcon,
-  PencilSquareIcon,
-  TrashIcon,
-  ExclamationTriangleIcon,
-  CheckCircleIcon,
-  NoSymbolIcon,
-  BoltIcon, // For In Progress
-  ListBulletIcon,
-  ArchiveBoxXMarkIcon
+  DndContext, PointerSensor, useSensor, useSensors, useDroppable,
+  type DragEndEvent, type DragOverEvent, type DragStartEvent, DragOverlay
+} from '@dnd-kit/core';
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+import {
+  ArrowLeftIcon, FlagIcon, PlusIcon, PencilSquareIcon, TrashIcon, ExclamationTriangleIcon,
+  ArchiveBoxXMarkIcon, ArrowPathIcon, CalendarDaysIcon, ListBulletIcon
 } from '@heroicons/react/24/outline';
+import { UserIcon } from '@heroicons/react/24/solid';
 
-interface Project {
-  id: string;
-  name: string;
-  description: string;
-  status: 'Not Started' | 'In Progress' | 'Completed' | 'Blocked';
-  createdBy: string;
-  createdAt: string;
-  updatedAt: string;
-  creator?: { id: string; username: string; email: string; role: string; };
-}
-
+// --- Type Definitions ---
+interface Project { id: string; name: string; description: string; }
 interface Task {
-  id: string;
-  title: string;
-  description?: string;
-  status: 'To Do' | 'In Progress' | 'Done' | 'Blocked';
-  priority: 'Low' | 'Medium' | 'High';
-  deadline?: string;
-  projectId: string;
-  assignedTo?: string | null;
-  reportedBy: string;
-  createdAt: string;
-  updatedAt: string;
-  project?: { id: string; name: string; status: string; };
-  assignee?: { id: string; username: string; email: string; role: string; };
-  reporter?: { id: string; username: string; email: string; role: string; };
+  id: string; title: string; description?: string; status: 'To Do' | 'In Progress' | 'Done' | 'Blocked';
+  priority: 'Low' | 'Medium' | 'High'; deadline?: string; projectId: string;
+  reportedBy: string; createdAt: string; updatedAt: string;
+  assignee?: { id: string; username: string; };
+  reporter?: { id: string; username: string; };
 }
+type TaskStatus = Task['status'];
 
-const socket = io(import.meta.env.VITE_API_BASE_URL.replace('/api', ''));
+// --- Constants & Configuration ---
+const TASK_KANBAN_COLUMNS = [
+    { id: 'To Do', title: 'To Do', color: 'slate' },
+    { id: 'In Progress', title: 'In Progress', color: 'sky' },
+    { id: 'Done', title: 'Done', color: 'green' },
+    { id: 'Blocked', title: 'Blocked', color: 'red' },
+] as const;
 
-const getProjectStatusStyles = (status: Project['status']) => {
-  switch (status) {
-    case 'Completed':
-      return 'bg-green-100 text-green-700 border-green-300';
-    case 'In Progress':
-      return 'bg-blue-100 text-blue-700 border-blue-300';
-    case 'Blocked':
-      return 'bg-red-100 text-red-700 border-red-300';
-    case 'Not Started':
-    default:
-      return 'bg-slate-100 text-slate-600 border-slate-300';
-  }
+const SOCKET_URL = import.meta.env.VITE_API_BASE_URL.replace('/api', '');
+const socket = io(SOCKET_URL);
+
+// --- Helper Functions ---
+const getAvatarColor = (name: string) => {
+    const color = tinycolor(name).saturate(20).darken(10);
+    return {
+      backgroundColor: color.toHexString(),
+      color: tinycolor.mostReadable(color, ['#ffffff', '#000000'])?.toHexString() || '#ffffff',
+    };
 };
 
-const getTaskStatusStyles = (status: Task['status']) => {
-  switch (status) {
-    case 'Done':
-      return 'bg-green-100 text-green-700';
-    case 'In Progress':
-      return 'bg-sky-100 text-sky-700';
-    case 'Blocked':
-      return 'bg-red-100 text-red-700';
-    case 'To Do':
-    default:
-      return 'bg-slate-100 text-slate-600';
-  }
+// --- Core UI Components ---
+const UserAvatar: React.FC<{ user?: { username: string } }> = ({ user }) => {
+    if (!user?.username) {
+        return (
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200" title="Unassigned">
+                <UserIcon className="h-5 w-5 text-slate-500" />
+            </div>
+        );
+    }
+    const { backgroundColor, color } = getAvatarColor(user.username);
+    return (
+        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold" style={{ backgroundColor, color }} title={user.username}>
+            {user.username.charAt(0).toUpperCase()}
+        </div>
+    );
 };
 
-const getTaskPriorityStyles = (priority: Task['priority']) => {
-  switch (priority) {
-    case 'High':
-      return 'bg-red-100 text-red-700';
-    case 'Medium':
-      return 'bg-amber-100 text-amber-700';
-    case 'Low':
-    default:
-      return 'bg-emerald-100 text-emerald-600';
-  }
+const PriorityBadge: React.FC<{ priority: Task['priority'] }> = ({ priority }) => {
+    const styles: Record<Task['priority'], string> = {
+        High: 'bg-red-100 text-red-800 ring-1 ring-inset ring-red-200',
+        Medium: 'bg-yellow-100 text-yellow-800 ring-1 ring-inset ring-yellow-200',
+        Low: 'bg-green-100 text-green-800 ring-1 ring-inset ring-green-200',
+    };
+    return (
+        <div className={`flex items-center gap-x-1.5 rounded-full px-2 py-1 text-xs font-medium ${styles[priority]}`}>
+            <FlagIcon className="h-3.5 w-3.5" />
+            {priority}
+        </div>
+    );
 };
 
+const TaskCard: React.FC<{
+  task: Task; canEdit: boolean; canDelete: boolean;
+  onEdit: () => void; onDelete: () => void; isOverlay?: boolean;
+}> = ({ task, canEdit, canDelete, onEdit, onDelete, isOverlay = false }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+      id: task.id,
+      data: { type: 'Task', task },
+  });
+  
+  const style = { transform: CSS.Translate.toString(transform), transition: isOverlay ? 'none' : transition };
 
+  if (isDragging) {
+    return <div ref={setNodeRef} style={style} className="h-[178px] rounded-xl border-2 border-dashed border-slate-300 bg-slate-200/50" />;
+  }
+  
+  const cardClasses = `bg-white rounded-xl shadow-sm hover:shadow-md border border-slate-200/80 transition-all duration-200 group relative ${isOverlay ? 'shadow-xl cursor-grabbing scale-[1.03]' : 'cursor-grab hover:-translate-y-0.5'}`;
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className={cardClasses}>
+      <div className="flex h-full flex-col p-4">
+        <div className="mb-2 flex items-start justify-between">
+            <h4 className="pr-14 font-semibold text-slate-800 line-clamp-2">{task.title}</h4>
+            {(canEdit || canDelete) && (
+              <div className="absolute right-3 top-3 z-10 flex space-x-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                  {canEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="rounded-full bg-slate-100 p-1.5 text-slate-500 hover:bg-blue-100 hover:text-blue-600" title="Edit Task"><PencilSquareIcon className="h-4 w-4"/></button>}
+                  {canDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="rounded-full bg-slate-100 p-1.5 text-slate-500 hover:bg-red-100 hover:text-red-600" title="Delete Task"><TrashIcon className="h-4 w-4"/></button>}
+              </div>
+            )}
+        </div>
+        <p className="mb-4 flex-grow text-sm text-slate-500 line-clamp-2">{task.description}</p>
+        <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-3">
+            <UserAvatar user={task.assignee} />
+            <div className="flex items-center space-x-4">
+                {task.deadline && (
+                    <div className="flex items-center gap-x-1.5 text-sm text-slate-600" title={`Deadline: ${new Date(task.deadline).toLocaleDateString()}`}>
+                        <CalendarDaysIcon className="h-4 w-4 text-slate-400" />
+                        <span>{new Date(task.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                    </div>
+                )}
+                <PriorityBadge priority={task.priority} />
+            </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const TaskColumn: React.FC<{
+    column: (typeof TASK_KANBAN_COLUMNS)[number];
+    tasks: Task[];
+    isOver: boolean;
+    children: React.ReactNode;
+}> = ({ column, tasks, isOver, children }) => {
+    const { setNodeRef } = useDroppable({ id: column.id, data: { type: 'Column' } });
+    const colorMap = {
+        slate:  { border: 'border-slate-500', bg: 'bg-slate-200/70', text: 'text-slate-600',  highlight: 'bg-slate-200/60' },
+        sky:    { border: 'border-sky-500',   bg: 'bg-sky-100/50',    text: 'text-sky-700',    highlight: 'bg-sky-200/60' },
+        green:  { border: 'border-green-500', bg: 'bg-green-100/50',  text: 'text-green-700',  highlight: 'bg-green-200/60' },
+        red:    { border: 'border-red-500',   bg: 'bg-red-100/50',    text: 'text-red-700',    highlight: 'bg-red-200/60' },
+    };
+    const ui = colorMap[column.color];
+
+    return (
+        <div className={`flex w-full shrink-0 flex-col rounded-xl border-t-4 ${ui.border} ${ui.bg} md:w-80 lg:w-[340px]`}>
+            <div className="sticky top-0 z-[5] bg-inherit p-4 rounded-t-xl">
+                <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-slate-800">{column.title}</h3>
+                    <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${ui.text} bg-white/80 ring-1 ring-inset ring-slate-200/80`}>{tasks.length}</span>
+                </div>
+            </div>
+            <div ref={setNodeRef} className={`min-h-[200px] flex-grow space-y-4 overflow-y-auto p-2 pb-4 transition-colors duration-300 ${isOver ? ui.highlight : ''}`}>
+                {children}
+                {tasks.length === 0 && (
+                     <div className="flex h-full items-center justify-center">
+                        <div className="px-4 py-10 text-center">
+                            <ListBulletIcon className="mx-auto mb-2 h-12 w-12 text-slate-400/60" />
+                            <p className="text-sm text-slate-500">No tasks here.</p>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// --- Main Page Component ---
 const ProjectDetailPage: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
   const [isEditTaskModalOpen, setIsEditTaskModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
 
+  const [activeTasks, setActiveTasks] = useState<Task[]>([]);
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [overColumnId, setOverColumnId] = useState<string | null>(null);
+
   const { data: project, isLoading: isProjectLoading, isError: isProjectError, error: projectError } = useQuery<Project, Error>({
     queryKey: ['project', projectId],
-    queryFn: async () => {
-      if (!projectId) throw new Error('Project ID is missing.');
-      const response = await api.get(`/projects/${projectId}`);
-      return response.data;
-    },
+    queryFn: async () => { if (!projectId) throw new Error('Project ID is missing.'); const { data } = await api.get(`/projects/${projectId}`); return data; },
     enabled: !!projectId,
-    staleTime: 60000,
   });
 
-  const { data: tasks, isLoading: isTasksLoading, isError: isTasksError, error: tasksError } = useQuery<Task[], Error>({
+  const { data: tasks, isLoading: isTasksLoading } = useQuery<Task[], Error>({
     queryKey: ['tasks', projectId],
-    queryFn: async () => {
-      if (!projectId) throw new Error('Project ID is missing.');
-      const response = await api.get(`/tasks?projectId=${projectId}`);
-      return response.data;
-    },
+    queryFn: async () => { if (!projectId) throw new Error('Project ID is missing.'); const { data } = await api.get(`/tasks?projectId=${projectId}&sortBy=updatedAt&sortOrder=desc`); return data; },
     enabled: !!projectId,
-    staleTime: 30000,
   });
+
+  useEffect(() => { if (tasks) setActiveTasks(tasks); }, [tasks]);
+
+  const tasksByStatus = useMemo(() => {
+    const initial = TASK_KANBAN_COLUMNS.reduce((acc, col) => ({ ...acc, [col.id]: [] }), {} as Record<TaskStatus, Task[]>);
+    return activeTasks.reduce((acc, task) => {
+        if (task?.status && acc[task.status]) acc[task.status].push(task);
+        return acc;
+    }, initial);
+  }, [activeTasks]);
 
   useEffect(() => {
     if (!projectId) return;
     socket.emit('joinProject', projectId);
-    const handleTaskEvent = (_event: string, _taskData: Task | { id: string; projectId: string }) => {
-        queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
-    };
-    socket.on('taskCreated', (task: Task) => handleTaskEvent('taskCreated', task));
-    socket.on('taskUpdated', (task: Task) => handleTaskEvent('taskUpdated', task));
-    socket.on('taskDeleted', (task: { id: string; projectId: string }) => handleTaskEvent('taskDeleted', task));
-    return () => {
-      socket.emit('leaveProject', projectId);
-      socket.off('taskCreated');
-      socket.off('taskUpdated');
-      socket.off('taskDeleted');
-    };
+    const handleTaskEvent = () => queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+    socket.on('taskCreated', handleTaskEvent); socket.on('taskUpdated', handleTaskEvent); socket.on('taskDeleted', handleTaskEvent);
+    return () => { socket.emit('leaveProject', projectId); socket.off('taskCreated'); socket.off('taskUpdated'); socket.off('taskDeleted'); };
   }, [projectId, queryClient]);
 
-  const deleteTaskMutation = useMutation({
-    mutationFn: async (taskId: string) => {
-      await api.delete(`/tasks/${taskId}`);
-    },
-    onSuccess: () => {
-      setIsConfirmDeleteDialogOpen(false);
-      setTaskToDelete(null);
-    },
-    onError: (error: any) => {
-      console.error('Delete task error:', error);
-      alert(`Failed to delete task: ${error.response?.data?.message || error.message}`);
-      setIsConfirmDeleteDialogOpen(false);
-      setTaskToDelete(null);
-    },
+  const updateTaskStatusMutation = useMutation({
+    mutationFn: ({ taskId, status }: { taskId: string; status: TaskStatus }) => api.patch(`/tasks/${taskId}`, { status }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['tasks', projectId] }),
   });
 
-  const openDeleteConfirmDialogForTask = useCallback((task: Task) => {
-    setTaskToDelete(task);
-    setIsConfirmDeleteDialogOpen(true);
-  }, []);
+  const deleteTaskMutation = useMutation({
+    mutationFn: (taskId: string) => api.delete(`/tasks/${taskId}`),
+    onSuccess: () => { setIsConfirmDeleteDialogOpen(false); setTaskToDelete(null); },
+    onError: (error: any) => alert(`Failed to delete task: ${error.response?.data?.message || error.message}`),
+  });
 
-  const handleConfirmTaskDelete = useCallback(() => {
-    if (taskToDelete) {
-      deleteTaskMutation.mutate(taskToDelete.id);
+  const handleEditTask = useCallback((task: Task) => { setSelectedTask(task); setIsEditTaskModalOpen(true); }, []);
+  const openDeleteConfirmDialogForTask = useCallback((task: Task) => { setTaskToDelete(task); setIsConfirmDeleteDialogOpen(true); }, []);
+  const handleConfirmTaskDelete = useCallback(() => { if (taskToDelete) deleteTaskMutation.mutate(taskToDelete.id); }, [taskToDelete, deleteTaskMutation]);
+
+  const canCreateTask = useMemo(() => !!(user && ['Admin', 'Project Manager', 'Developer'].includes(user.role)), [user]);
+  const canEditTask = useCallback((task: Task) => !!(user && (['Admin', 'Project Manager'].includes(user.role) || task.assignee?.id === user.id || task.reporter?.id === user.id)), [user]);
+  const canDeleteTask = useCallback((task: Task) => !!(user && (['Admin', 'Project Manager'].includes(user.role) || task.reporter?.id === user.id)), [user]);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const handleDragStart = (event: DragStartEvent) => { if (event.active.data.current?.type === 'Task') setActiveTask(event.active.data.current.task); };
+  const handleDragOver = (event: DragOverEvent) => setOverColumnId(event.over?.data.current?.type === 'Column' ? (event.over.id as string) : null);
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    setActiveTask(null); setOverColumnId(null);
+    const { active, over } = event;
+    if (!over || active.data.current?.type !== 'Task') return;
+    
+    if (over.data.current?.type === 'Column') {
+        const taskId = active.id as string;
+        const task = activeTasks.find(t => t.id === taskId);
+        const newStatus = over.id as TaskStatus;
+        if (task && task.status !== newStatus) {
+            const optimisticOldState = [...activeTasks];
+            setActiveTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
+            updateTaskStatusMutation.mutate({ taskId, status: newStatus }, { onError: () => setActiveTasks(optimisticOldState) });
+        }
     }
-  }, [taskToDelete, deleteTaskMutation]);
+  }, [activeTasks, updateTaskStatusMutation]);
+  const handleDragCancel = () => { setActiveTask(null); setOverColumnId(null); };
 
-  const canCreateTask = user && ['Admin', 'Project Manager', 'Developer'].includes(user.role);
-  const canEditTask = (task: Task) => user && (
-    ['Admin', 'Project Manager'].includes(user.role) ||
-    (task.assignedTo === user.id && user.role === 'Developer') ||
-    (task.reportedBy === user.id)
-  );
-  const canDeleteTask = (task: Task) => user && (
-    ['Admin', 'Project Manager'].includes(user.role) ||
-    (task.reportedBy === user.id)
-  );
-
-  const isLoading = isProjectLoading || (isTasksLoading && !tasks); // Show loading if project is loading or tasks are loading initially
-  const isError = isProjectError || (isTasksError && !tasks); // Show error if project errored or tasks errored initially
-  const combinedError = projectError || tasksError;
-
-  if (isLoading) return (
-    <div className="min-h-[calc(100vh-200px)] flex flex-col items-center justify-center text-slate-600">
-        <svg className="animate-spin h-10 w-10 text-blue-600 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        <p className="text-lg font-medium">Loading Project Details...</p>
+  // --- Render States ---
+  if (isProjectLoading || isTasksLoading) return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-100">
+        <div className="flex flex-col items-center text-slate-600">
+            <ArrowPathIcon className="mb-4 h-10 w-10 animate-spin text-blue-600" />
+            <p className="text-lg font-semibold">Loading Project Board...</p>
+        </div>
     </div>
   );
 
-  if (isError) return (
-    <div className="min-h-[calc(100vh-200px)] flex flex-col items-center justify-center text-red-600 bg-red-50 p-8 rounded-lg">
-        <ExclamationTriangleIcon className="h-12 w-12 text-red-500 mb-4" />
-        <p className="text-xl font-semibold mb-2">Error Loading Project</p>
-        <p className="text-sm text-red-700 text-center mb-4">{combinedError?.message || "An unexpected error occurred."}</p>
-         <button 
-          onClick={() => queryClient.refetchQueries({ queryKey: ['project', projectId] })}
-          className="px-4 py-2 bg-red-500 text-white text-sm font-medium rounded-md hover:bg-red-600 transition-colors"
-        >
-          Try Again
-        </button>
-    </div>
-  );
-  if (!project) return (
-    <div className="min-h-[calc(100vh-200px)] flex flex-col items-center justify-center text-slate-600">
-        <BriefcaseIcon className="h-12 w-12 text-slate-400 mb-4" />
-        <p className="text-xl font-semibold mb-2">Project Not Found</p>
-        <p className="text-sm text-slate-500">The project you are looking for does not exist or you may not have access.</p>
-        <Link to="/dashboard/projects" className="mt-4 px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-md hover:bg-blue-600 transition-colors">
-          Go Back to Projects
-        </Link>
+  if (isProjectError || !project) return (
+    <div className="flex min-h-screen items-center justify-center bg-red-50 p-4">
+        <div className="flex flex-col items-center text-center text-red-700">
+            <ExclamationTriangleIcon className="mb-4 h-12 w-12 text-red-500" />
+            <h1 className="mb-2 text-xl font-semibold">Error Loading Project</h1>
+            <p className="mb-6 text-base text-red-600">{projectError?.message || "The project could not be found or you don't have permission to view it."}</p>
+            <Link to="/dashboard/projects" className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-red-50">
+                Back to Projects
+            </Link>
+        </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800 selection:bg-blue-500 selection:text-white">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
-        <Link 
-          to="/dashboard/projects" 
-          className="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-md transition-colors mb-6 sm:mb-8 group"
-        >
-          <ArrowLeftIcon className="h-4 w-4 mr-2 transform transition-transform group-hover:-translate-x-0.5" />
-          Back to Projects
-        </Link>
+    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}>
+        <div className="min-h-screen bg-slate-100 text-slate-900">
+            <main className="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
+                <Link to="/dashboard/projects" className="group mb-8 inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-800">
+                    <ArrowLeftIcon className="mr-2 h-4 w-4 transition-transform group-hover:-translate-x-1" />
+                    Back to All Projects
+                </Link>
+                
+                <div className="mb-10 rounded-xl border border-slate-200/80 bg-white p-6 shadow-sm sm:p-8">
+                    <h1 className="mb-1 text-4xl font-extrabold tracking-tight text-slate-900">{project.name}</h1>
+                    <p className="max-w-4xl text-base text-slate-600">{project.description}</p>
+                </div>
 
-        <div className="bg-white p-6 sm:p-8 rounded-xl shadow-xl mb-8 md:mb-10">
-          <div className="flex flex-col md:flex-row md:items-start md:justify-between">
-            <div>
-              <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-2">{project.name}</h1>
-              <p className="text-slate-600 text-base mb-5 max-w-3xl">{project.description || 'No description provided for this project.'}</p>
-            </div>
-            <div className={`flex-shrink-0 mt-4 md:mt-0 md:ml-6 inline-flex items-center px-3.5 py-1.5 rounded-full text-sm font-semibold border ${getProjectStatusStyles(project.status)}`}>
-              {project.status === 'Completed' && <CheckCircleIcon className="h-5 w-5 mr-1.5" />}
-              {project.status === 'In Progress' && <BoltIcon className="h-5 w-5 mr-1.5" />}
-              {project.status === 'Blocked' && <NoSymbolIcon className="h-5 w-5 mr-1.5" />}
-              {project.status === 'Not Started' && <ListBulletIcon className="h-5 w-5 mr-1.5" />}
-              {project.status}
-            </div>
-          </div>
-          <div className="mt-5 pt-5 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3 text-sm text-slate-500">
-            <div className="flex items-center">
-              <UserCircleIcon className="h-5 w-5 mr-2 text-slate-400" />
-              <span>Created by: <span className="font-medium text-slate-700">{project.creator?.username || 'N/A'}</span></span>
-            </div>
-            <div className="flex items-center">
-              <CalendarDaysIcon className="h-5 w-5 mr-2 text-slate-400" />
-              <span>Created: <span className="font-medium text-slate-700">{new Date(project.createdAt).toLocaleDateString()}</span></span>
-            </div>
-             <div className="flex items-center">
-              <ClockIcon className="h-5 w-5 mr-2 text-slate-400" />
-              <span>Last Updated: <span className="font-medium text-slate-700">{new Date(project.updatedAt).toLocaleDateString()}</span></span>
-            </div>
-          </div>
-        </div>
-
-        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 sm:mb-8 gap-4">
-          <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">Tasks</h2>
-          {canCreateTask && (
-            <button
-              onClick={() => setIsCreateTaskModalOpen(true)}
-              className="flex items-center px-5 py-2.5 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-100 transition-colors duration-150 ease-in-out text-sm font-medium"
-            >
-              <PlusIcon className="h-5 w-5 mr-2 -ml-1" />
-              Create New Task
-            </button>
-          )}
-        </header>
-
-        {isTasksLoading && tasks && (
-          <div className="text-center text-sm text-slate-500 mb-4 py-2">Refreshing tasks...</div>
-        )}
-        {isTasksError && tasks && (
-           <div className="text-center text-sm text-red-500 mb-4 py-2 bg-red-50 rounded-md">
-            <ExclamationTriangleIcon className="inline h-4 w-4 mr-1" />
-            Could not refresh tasks. Displaying cached data.
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-          {tasks?.length === 0 ? (
-            <div className="lg:col-span-2 xl:col-span-3 text-center py-16 flex flex-col items-center justify-center bg-white rounded-xl shadow-md">
-              <ArchiveBoxXMarkIcon className="h-16 w-16 text-slate-400 mb-4" />
-              <p className="text-xl font-medium text-slate-600 mb-1">No Tasks Yet</p>
-              <p className="text-slate-500">
-                {canCreateTask ? "Be the first to add a task to this project!" : "There are currently no tasks assigned to this project."}
-              </p>
-            </div>
-          ) : (
-            tasks?.map((task) => (
-              <div key={task.id} className="bg-white rounded-xl shadow-lg hover:shadow-xl border border-slate-200/80 transition-all duration-300 ease-in-out flex flex-col overflow-hidden">
-                <div className="p-5 sm:p-6 flex-grow">
-                  <div className="flex justify-between items-start mb-3">
-                    <h3 className="text-lg font-semibold text-slate-800 line-clamp-2 break-words">{task.title}</h3>
-                    {(canEditTask(task) || canDeleteTask(task)) && (
-                      <div className="flex-shrink-0 flex space-x-1.5">
-                        {canEditTask(task) && (
-                          <button
-                            onClick={() => { setSelectedTask(task); setIsEditTaskModalOpen(true); }}
-                            className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
-                            title="Edit Task"
-                          >
-                            <PencilSquareIcon className="h-5 w-5" />
-                          </button>
-                        )}
-                        {canDeleteTask(task) && (
-                          <button
-                            onClick={() => openDeleteConfirmDialogForTask(task)}
-                            className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1"
-                            title="Delete Task"
-                            disabled={deleteTaskMutation.isPending && deleteTaskMutation.variables === task.id}
-                          >
-                            <TrashIcon className="h-5 w-5" />
-                          </button>
-                        )}
-                      </div>
+                <header className="mb-6 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <h2 className="text-2xl font-bold text-slate-900">Task Board</h2>
+                    {canCreateTask && (
+                        <button onClick={() => setIsCreateTaskModalOpen(true)} className="flex items-center gap-x-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-500/50">
+                            <PlusIcon className="h-5 w-5" />
+                            Create Task
+                        </button>
                     )}
-                  </div>
-                  <p className="text-slate-600 text-sm mb-4 line-clamp-3">{task.description || 'No description provided.'}</p>
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${getTaskStatusStyles(task.status)}`}>
-                      {task.status === 'Done' && <CheckCircleIcon className="h-3.5 w-3.5 mr-1" />}
-                      {task.status === 'In Progress' && <BoltIcon className="h-3.5 w-3.5 mr-1" />}
-                      {task.status === 'Blocked' && <NoSymbolIcon className="h-3.5 w-3.5 mr-1" />}
-                      {task.status === 'To Do' && <ListBulletIcon className="h-3.5 w-3.5 mr-1" />}
-                      {task.status}
-                    </span>
-                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${getTaskPriorityStyles(task.priority)}`}>
-                      <FlagIcon className="h-3.5 w-3.5 mr-1" />
-                      {task.priority}
-                    </span>
-                  </div>
+                </header>
+
+                <div className="flex min-w-full gap-x-6 overflow-x-auto pb-4">
+                    {TASK_KANBAN_COLUMNS.map(column => {
+                        const columnTasks = tasksByStatus[column.id] || [];
+                        const taskIds = columnTasks.map(t => t.id);
+                        return (
+                            <TaskColumn key={column.id} column={column} tasks={columnTasks} isOver={overColumnId === column.id}>
+                                <SortableContext items={taskIds} id={column.id} strategy={verticalListSortingStrategy}>
+                                    {columnTasks.map(task => (
+                                        <TaskCard key={task.id} task={task} canEdit={canEditTask(task)} canDelete={canDeleteTask(task)} onEdit={() => handleEditTask(task)} onDelete={() => openDeleteConfirmDialogForTask(task)} />
+                                    ))}
+                                </SortableContext>
+                            </TaskColumn>
+                        )
+                    })}
                 </div>
-                <div className="px-5 sm:px-6 py-4 bg-slate-50 border-t border-slate-200/80 text-xs text-slate-500 space-y-1.5">
-                  <div className="flex items-center">
-                    <UserCircleIcon className="h-4 w-4 mr-1.5 text-slate-400" />
-                    Assignee: <span className="font-medium text-slate-600 ml-1">{task.assignee?.username || 'Unassigned'}</span>
-                  </div>
-                  <div className="flex items-center">
-                    <TagIcon className="h-4 w-4 mr-1.5 text-slate-400" />
-                    Reporter: <span className="font-medium text-slate-600 ml-1">{task.reporter?.username || 'N/A'}</span>
-                  </div>
-                  {task.deadline && (
-                    <div className="flex items-center">
-                      <CalendarDaysIcon className="h-4 w-4 mr-1.5 text-slate-400" />
-                      Deadline: <span className="font-medium text-slate-600 ml-1">{new Date(task.deadline).toLocaleDateString()}</span>
+                
+                {tasks?.length === 0 && !isTasksLoading && (
+                    <div className="mt-8 flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white/50 py-20 text-center">
+                        <ArchiveBoxXMarkIcon className="mb-4 h-16 w-16 text-slate-400" />
+                        <p className="mb-1 text-xl font-medium text-slate-700">No Tasks Yet</p>
+                        <p className="text-slate-500">
+                            {canCreateTask ? "Get started by creating the first task for this project." : "There are currently no tasks for this project."}
+                        </p>
                     </div>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
+                )}
+            </main>
+
+            {isCreateTaskModalOpen && <CreateTaskForm projectId={project.id} onClose={() => setIsCreateTaskModalOpen(false)} />}
+            {isEditTaskModalOpen && selectedTask && <EditTaskForm task={selectedTask} onClose={() => { setIsEditTaskModalOpen(false); setSelectedTask(null); }} />}
+            {taskToDelete && <ConfirmDeleteDialog isOpen={isConfirmDeleteDialogOpen} onClose={() => setIsConfirmDeleteDialogOpen(false)} onConfirm={handleConfirmTaskDelete} title="Confirm Task Deletion" message="Are you sure you want to delete this task? This action cannot be undone." itemName={taskToDelete.title} isDeleting={deleteTaskMutation.isPending} />}
         </div>
-      </div>
-
-      {isCreateTaskModalOpen && project && (
-         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" aria-hidden="true" />
-      )}
-      {isCreateTaskModalOpen && project && (
-        <CreateTaskForm
-          projectId={project.id}
-          onClose={() => setIsCreateTaskModalOpen(false)}
-        />
-      )}
-
-      {isEditTaskModalOpen && selectedTask && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" aria-hidden="true" />
-      )}
-      {isEditTaskModalOpen && selectedTask && (
-        <EditTaskForm
-          task={selectedTask}
-          onClose={() => { setIsEditTaskModalOpen(false); setSelectedTask(null); }}
-        />
-      )}
-
-      {taskToDelete && (
-        <ConfirmDeleteDialog
-            isOpen={isConfirmDeleteDialogOpen}
-            onClose={() => { setIsConfirmDeleteDialogOpen(false); setTaskToDelete(null); }}
-            onConfirm={handleConfirmTaskDelete}
-            title="Confirm Task Deletion"
-            message="Are you sure you want to delete this task? This action cannot be undone."
-            itemName={taskToDelete.title}
-            isDeleting={deleteTaskMutation.isPending}
-        />
-      )}
-    </div>
+        <DragOverlay>
+            {activeTask ? (
+                <div style={{ transform: 'rotate(2deg)' }}>
+                    <TaskCard task={activeTask} canEdit={canEditTask(activeTask)} canDelete={canDeleteTask(activeTask)} onEdit={() => {}} onDelete={() => {}} isOverlay={true} />
+                </div>
+            ) : null}
+        </DragOverlay>
+    </DndContext>
   );
 };
 
