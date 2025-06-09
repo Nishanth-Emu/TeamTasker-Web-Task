@@ -23,7 +23,6 @@ import {
 } from '@heroicons/react/24/outline';
 import { UserIcon } from '@heroicons/react/24/solid';
 
-// --- Type Definitions ---
 interface Project { id: string; name: string; description: string; }
 interface Task {
   id: string; title: string; description?: string; status: 'To Do' | 'In Progress' | 'Done' | 'Blocked';
@@ -34,7 +33,6 @@ interface Task {
 }
 type TaskStatus = Task['status'];
 
-// --- Constants & Configuration ---
 const TASK_KANBAN_COLUMNS = [
     { id: 'To Do', title: 'To Do', color: 'slate' },
     { id: 'In Progress', title: 'In Progress', color: 'sky' },
@@ -45,7 +43,6 @@ const TASK_KANBAN_COLUMNS = [
 const SOCKET_URL = import.meta.env.VITE_API_BASE_URL.replace('/api', '');
 const socket = io(SOCKET_URL);
 
-// --- Helper Functions ---
 const getAvatarColor = (name: string) => {
     const color = tinycolor(name).saturate(20).darken(10);
     return {
@@ -54,7 +51,6 @@ const getAvatarColor = (name: string) => {
     };
 };
 
-// --- Core UI Components ---
 const UserAvatar: React.FC<{ user?: { username: string } }> = ({ user }) => {
     if (!user?.username) {
         return (
@@ -177,7 +173,6 @@ const TaskColumn: React.FC<{
     );
 };
 
-// --- Main Page Component ---
 const ProjectDetailPage: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const { user } = useAuth();
@@ -188,10 +183,19 @@ const ProjectDetailPage: React.FC = () => {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
-
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const [activeTasks, setActiveTasks] = useState<Task[]>([]);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (alertMessage) {
+      const timer = setTimeout(() => {
+        setAlertMessage(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [alertMessage]);
 
   const { data: project, isLoading: isProjectLoading, isError: isProjectError, error: projectError } = useQuery<Project, Error>({
     queryKey: ['project', projectId],
@@ -246,13 +250,22 @@ const ProjectDetailPage: React.FC = () => {
   const handleDragStart = (event: DragStartEvent) => { if (event.active.data.current?.type === 'Task') setActiveTask(event.active.data.current.task); };
   const handleDragOver = (event: DragOverEvent) => setOverColumnId(event.over?.data.current?.type === 'Column' ? (event.over.id as string) : null);
   const handleDragEnd = useCallback((event: DragEndEvent) => {
-    setActiveTask(null); setOverColumnId(null);
+    setActiveTask(null);
+    setOverColumnId(null);
     const { active, over } = event;
-    if (!over || active.data.current?.type !== 'Task') return;
     
+    if (!over || active.data.current?.type !== 'Task' || !user) return;
+    
+    const task = active.data.current.task as Task;
+    const canDragTask = ['Admin', 'Project Manager'].includes(user.role) || task?.assignee?.id === user.id;
+
+    if (!canDragTask) {
+        setAlertMessage("you have no permission to do this");
+        return;
+    }
+
     if (over.data.current?.type === 'Column') {
         const taskId = active.id as string;
-        const task = activeTasks.find(t => t.id === taskId);
         const newStatus = over.id as TaskStatus;
         if (task && task.status !== newStatus) {
             const optimisticOldState = [...activeTasks];
@@ -260,10 +273,9 @@ const ProjectDetailPage: React.FC = () => {
             updateTaskStatusMutation.mutate({ taskId, status: newStatus }, { onError: () => setActiveTasks(optimisticOldState) });
         }
     }
-  }, [activeTasks, updateTaskStatusMutation]);
+  }, [activeTasks, updateTaskStatusMutation, user]);
   const handleDragCancel = () => { setActiveTask(null); setOverColumnId(null); };
 
-  // --- Render States ---
   if (isProjectLoading || isTasksLoading) return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100">
         <div className="flex flex-col items-center text-slate-600">
@@ -288,6 +300,14 @@ const ProjectDetailPage: React.FC = () => {
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}>
+        {alertMessage && (
+            <div role="alert" className="fixed top-24 right-6 z-50 flex items-center gap-x-3 rounded-md border-l-4 border-yellow-400 bg-yellow-50 p-4 shadow-lg">
+                <ExclamationTriangleIcon className="h-6 w-6 shrink-0 text-yellow-500" />
+                <p className="text-sm font-medium text-yellow-800">
+                    {alertMessage}
+                </p>
+            </div>
+        )}
         <div className="min-h-screen bg-slate-100 text-slate-900">
             <main className="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
                 <Link to="/dashboard/projects" className="group mb-8 inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-800">

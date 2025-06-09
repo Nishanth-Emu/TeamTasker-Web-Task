@@ -265,10 +265,21 @@ const ProjectsPage: React.FC = () => {
     const [activeProject, setActiveProject] = useState<Project | null>(null);
     const [overColumnId, setOverColumnId] = useState<string | null>(null);
 
+    const [alertMessage, setAlertMessage] = useState<string | null>(null);
+
     useEffect(() => {
         const timer = setTimeout(() => setDebouncedSearchTerm(searchTerm), 500);
         return () => clearTimeout(timer);
     }, [searchTerm]);
+
+    useEffect(() => {
+        if (alertMessage) {
+            const timer = setTimeout(() => {
+                setAlertMessage(null);
+            }, 4000); 
+            return () => clearTimeout(timer);
+        }
+    }, [alertMessage]);
 
     const { data: projects, isLoading, isError, error, refetch } = useQuery<Project[], Error>({
         queryKey: ['projects', filterStatus, sortBy, sortOrder, debouncedSearchTerm],
@@ -309,21 +320,48 @@ const ProjectsPage: React.FC = () => {
     const handleConfirmDelete = useCallback(() => { if (projectToDelete) deleteProjectMutation.mutate(projectToDelete.id); }, [projectToDelete, deleteProjectMutation]);
     const handleEditProject = useCallback((project: Project) => { setSelectedProject(project); setIsEditModalOpen(true); }, []);
 
+    // --- NEW FEATURE: Memoized value to check if user has drag permissions.
+    // 'Admin' and 'Project Manager' roles map to the 'admin'/'manager' requirement.
+    // useMemo prevents recalculating this on every render for better performance.
+    const canDragProjects = useMemo(() => user && ['Admin', 'Project Manager'].includes(user.role), [user]);
+
     const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 10 } }));
     const handleDragStart = (event: DragStartEvent) => { if (event.active.data.current?.type === 'Project') setActiveProject(event.active.data.current.project); };
     const handleDragOver = (event: DragOverEvent) => setOverColumnId(event.over?.data.current?.type === 'Column' ? (event.over.id as string) : null);
+    
+    // --- NEW FEATURE: Updated drag end handler with permission check.
     const handleDragEnd = (event: DragEndEvent) => {
-        setActiveProject(null); setOverColumnId(null);
+        setActiveProject(null);
+        setOverColumnId(null);
         const { active, over } = event;
-        if (!over || active.id === over.id || active.data.current?.type !== 'Project') return;
-        if (over.data.current?.type === 'Column') {
+
+        // Exit if the drag is invalid or didn't result in a change of position.
+        if (!over || active.id === over.id) return;
+        
+        const isProjectDrag = active.data.current?.type === 'Project';
+        const isColumnDrop = over.data.current?.type === 'Column';
+
+        // Only proceed if a project is dropped onto a column.
+        if (isProjectDrag && isColumnDrop) {
+            // Permission check is the crucial new logic.
+            if (!canDragProjects) {
+                // If user lacks permission, show the alert and abort the operation.
+                setAlertMessage("you have no permission to do this");
+                return;
+            }
+            
+            // If permissions are valid, execute the original mutation logic.
             const projectId = active.id as string;
             const project = localProjects.find(p => p.id === projectId);
             const newStatus = over.id as ProjectStatus;
+            
             if (project && project.status !== newStatus) {
                 const optimisticOldState = [...localProjects];
                 setLocalProjects(prev => prev.map(p => p.id === projectId ? { ...p, status: newStatus } : p));
-                updateProjectStatusMutation.mutate({ projectId, status: newStatus }, { onError: () => setLocalProjects(optimisticOldState) });
+                updateProjectStatusMutation.mutate(
+                    { projectId, status: newStatus },
+                    { onError: () => setLocalProjects(optimisticOldState) }
+                );
             }
         }
     };
@@ -379,6 +417,20 @@ const ProjectsPage: React.FC = () => {
 
     return (
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd} onDragCancel={() => { setActiveProject(null); setOverColumnId(null); }}>
+            {/* --- NEW FEATURE: Custom alert UI for permission errors. --- */}
+            {/* It's non-modal, styled as a warning, and positioned to not obstruct content. */}
+            {alertMessage && (
+                <div 
+                  role="alert"
+                  className="fixed top-24 right-6 z-50 flex animate-fade-in-down items-center gap-x-3 rounded-md border-l-4 border-yellow-400 bg-yellow-50 p-4 shadow-lg"
+                >
+                  <ExclamationTriangleIcon className="h-6 w-6 shrink-0 text-yellow-500" />
+                  <p className="text-sm font-medium text-yellow-800">
+                    {alertMessage}
+                  </p>
+                </div>
+            )}
+            
             <div className="min-h-screen bg-slate-100 text-slate-900">
                 <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/80 shadow-sm backdrop-blur-sm">
                     <div className="mx-auto max-w-screen-2xl px-4 sm:px-6 lg:px-8">

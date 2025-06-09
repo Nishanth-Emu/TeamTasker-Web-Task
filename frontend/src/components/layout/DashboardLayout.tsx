@@ -2,8 +2,8 @@ import React, { useMemo } from 'react';
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
-import { useQuery } from '@tanstack/react-query';
-import { getNotifications } from '../../api/notification.api';
+// import { useQuery } from '@tanstack/react-query';
+// import { getNotifications } from '../../api/notification.api';
 import { BriefcaseIcon, UsersIcon, BellIcon, ArrowLeftEndOnRectangleIcon , UserCircleIcon } from '@heroicons/react/24/outline'; 
 import { BuildingOffice2Icon } from '@heroicons/react/24/solid';
 
@@ -13,11 +13,11 @@ const DashboardLayout: React.FC = () => {
   const navigate = useNavigate();
 
   // Fetch notifications from the server
-  const { data: serverNotifications = [] } = useQuery({
-    queryKey: ['notifications'],
-    queryFn: getNotifications,
-    refetchOnWindowFocus: false,
-  });
+  // const { data: serverNotifications = [] } = useQuery({
+  //   queryKey: ['notifications'],
+  //   queryFn: getNotifications,
+  //   refetchOnWindowFocus: false,
+  // });
 
   const handleLogout = () => {
     logout();
@@ -25,28 +25,28 @@ const DashboardLayout: React.FC = () => {
   };
 
   // Merge socket and server notifications, prioritizing socket notifications for real-time updates
-  const mergedNotifications = useMemo(() => {
-    if (socketNotifications.length === 0) {
-      return serverNotifications;
-    }
+  // const mergedNotifications = useMemo(() => {
+  //   if (socketNotifications.length === 0) {
+  //     return serverNotifications;
+  //   }
     
-    // Create a map of socket notifications for quick lookup
-    const socketNotificationMap = new Map(
-      socketNotifications.map(notif => [notif.id, notif])
-    );
+  //   // Create a map of socket notifications for quick lookup
+  //   const socketNotificationMap = new Map(
+  //     socketNotifications.map(notif => [notif.id, notif])
+  //   );
     
-    // Merge: use socket notification if available, otherwise use server notification
-    const merged = serverNotifications.map(serverNotif => 
-      socketNotificationMap.get(serverNotif.id) || serverNotif
-    );
+  //   // Merge: use socket notification if available, otherwise use server notification
+  //   const merged = serverNotifications.map(serverNotif => 
+  //     socketNotificationMap.get(serverNotif.id) || serverNotif
+  //   );
     
-    // Add any new socket notifications that aren't in server notifications yet
-    const newSocketNotifications = socketNotifications.filter(
-      socketNotif => !serverNotifications.some(serverNotif => serverNotif.id === socketNotif.id)
-    );
+  //   // Add any new socket notifications that aren't in server notifications yet
+  //   const newSocketNotifications = socketNotifications.filter(
+  //     socketNotif => !serverNotifications.some(serverNotif => serverNotif.id === socketNotif.id)
+  //   );
     
-    return [...merged, ...newSocketNotifications];
-  }, [socketNotifications, serverNotifications]);
+  //   return [...merged, ...newSocketNotifications];
+  // }, [socketNotifications, serverNotifications]);
 
   // Calculate unread count from merged notifications
    const unreadCount = useMemo(() => {
