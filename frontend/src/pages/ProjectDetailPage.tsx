@@ -19,7 +19,10 @@ import { CSS } from '@dnd-kit/utilities';
 
 import {
   ArrowLeftIcon, FlagIcon, PlusIcon, PencilSquareIcon, TrashIcon, ExclamationTriangleIcon,
-  ArchiveBoxXMarkIcon, ArrowPathIcon, CalendarDaysIcon, ListBulletIcon
+  ArchiveBoxXMarkIcon, ArrowPathIcon, CalendarDaysIcon, ListBulletIcon,
+  // === DESIGN PRINCIPLE: SYSTEMATIC APPROACH & AFFORDANCES ===
+  // Importing specific, universally understood icons for each column status.
+  ClipboardDocumentListIcon, Cog8ToothIcon, CheckCircleIcon, NoSymbolIcon
 } from '@heroicons/react/24/outline';
 import { UserIcon } from '@heroicons/react/24/solid';
 
@@ -33,11 +36,14 @@ interface Task {
 }
 type TaskStatus = Task['status'];
 
+// === DESIGN PRINCIPLE: SYSTEMATIC APPROACH ===
+// Icons are now part of the column configuration, creating a single source of truth.
+// This makes the design system more robust and easier to maintain.
 const TASK_KANBAN_COLUMNS = [
-    { id: 'To Do', title: 'To Do', color: 'slate' },
-    { id: 'In Progress', title: 'In Progress', color: 'sky' },
-    { id: 'Done', title: 'Done', color: 'green' },
-    { id: 'Blocked', title: 'Blocked', color: 'red' },
+    { id: 'To Do', title: 'To Do', color: 'slate', icon: ClipboardDocumentListIcon },
+    { id: 'In Progress', title: 'In Progress', color: 'sky', icon: Cog8ToothIcon },
+    { id: 'Done', title: 'Done', color: 'green', icon: CheckCircleIcon },
+    { id: 'Blocked', title: 'Blocked', color: 'red', icon: NoSymbolIcon },
 ] as const;
 
 const SOCKET_URL = import.meta.env.VITE_API_BASE_URL.replace('/api', '');
@@ -149,12 +155,25 @@ const TaskColumn: React.FC<{
         red:    { border: 'border-red-500',   bg: 'bg-red-100/50',    text: 'text-red-700',    highlight: 'bg-red-200/60' },
     };
     const ui = colorMap[column.color];
+    // === DESIGN PRINCIPLE: SYSTEMATIC APPROACH ===
+    // Retrieving the icon component directly from the column configuration prop.
+    const IconComponent = column.icon;
 
     return (
         <div className={`flex w-full shrink-0 flex-col rounded-xl border-t-4 ${ui.border} ${ui.bg} md:w-80 lg:w-[340px]`}>
             <div className="sticky top-0 z-[5] bg-inherit p-4 rounded-t-xl">
                 <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-slate-800">{column.title}</h3>
+                    {/* === DESIGN PRINCIPLE: HIERARCHY, SPACING & 5-SECOND RULE ===
+                        - An outer div groups the icon and title.
+                        - `items-center` ensures vertical alignment.
+                        - `gap-x-3` provides consistent 12px spacing (adhering to 4pt/8pt grid).
+                        - The icon appears first, aiding rapid visual scanning (F-Pattern).
+                        - The icon's color is tied to the column theme for visual cohesion.
+                    */}
+                    <div className="flex items-center gap-x-3">
+                      <IconComponent className={`h-6 w-6 shrink-0 ${ui.text}`} aria-hidden="true" />
+                      <h3 className="text-lg font-semibold text-slate-800">{column.title}</h3>
+                    </div>
                     <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${ui.text} bg-white/80 ring-1 ring-inset ring-slate-200/80`}>{tasks.length}</span>
                 </div>
             </div>
