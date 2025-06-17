@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt, { SignOptions } from 'jsonwebtoken';
-import User from '../models/User';
+import db from '../models/index';
 
 const generateToken = (id: string, role: string): string => {
   const secret = process.env.JWT_SECRET;
@@ -23,7 +23,7 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
   const { username, email, password, role } = req.body;
 
   try {
-    const existingUser = await User.findOne({ where: { email } });
+    const existingUser = await db.User.findOne({ where: { email } });
     if (existingUser) {
       res.status(409).json({ message: 'User with this email already exists.' });
       return;
@@ -32,7 +32,7 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    const newUser = await User.create({
+    const newUser = await db.User.create({
       username,
       email,
       passwordHash,
@@ -62,7 +62,7 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
   const { email, password } = req.body;
 
   try {
-    const user = await User.findOne({ where: { email } });
+    const user = await db.User.findOne({ where: { email } });
     if (!user) {
       res.status(401).json({ message: 'Invalid credentials.' });
       return;

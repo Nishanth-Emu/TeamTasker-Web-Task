@@ -1,10 +1,7 @@
 import { Request, Response } from 'express';
-import Task from '../models/Task';
-import Project from '../models/Project';
-import User from '../models/User';
-import Notification from '../models/Notification';
+import db from '../models/index';
 import { io, sendNotificationToUser } from '../index';
-import { redisClient, REDIS_CACHE_TTL } from '../config/redis';
+import { redisClient, REDIS_CACHE_TTL } from '../index';
 
 interface CustomRequest extends Request {
   user?: {
@@ -29,21 +26,21 @@ export const createTask = async (req: CustomRequest, res: Response): Promise<voi
       return;
     }
 
-    const project = await Project.findByPk(projectId);
+    const project = await db.Project.findByPk(projectId);
     if (!project) {
       res.status(404).json({ message: 'Project not found.' });
       return;
     }
 
     if (assignedTo) {
-      const assignee = await User.findByPk(assignedTo);
+      const assignee = await db.User.findByPk(assignedTo);
       if (!assignee) {
         res.status(404).json({ message: 'Assigned user not found.' });
         return;
       }
     }
 
-    const task = await Task.create({
+    const task = await db.Task.create({
       title,
       description,
       status: status || 'To Do',
@@ -59,11 +56,11 @@ export const createTask = async (req: CustomRequest, res: Response): Promise<voi
     await redisClient.del(getTasksCacheKey(projectId)); // Invalidate cache for tasks in this project
     console.log(`Invalidated all tasks cache and project ${projectId} tasks cache.`);
 
-    const createdTaskWithAssociations = await Task.findByPk(task.id, {
+    const createdTaskWithAssociations = await db.Task.findByPk(task.id, {
         include: [
-            { model: Project, as: 'project', attributes: ['id', 'name', 'status'] },
-            { model: User, as: 'assignee', attributes: userAttributes },
-            { model: User, as: 'reporter', attributes: userAttributes },
+            { model: db.Project, as: 'project', attributes: ['id', 'name', 'status'] },
+            { model: db.User, as: 'assignee', attributes: userAttributes },
+            { model: db.User, as: 'reporter', attributes: userAttributes },
         ],
     });
 
@@ -75,7 +72,7 @@ export const createTask = async (req: CustomRequest, res: Response): Promise<voi
         // Send notification to assigned user if task is assigned
         if (assignedTo && assignedTo !== req.user.id) {
           // Create and save the notification in the database
-          const newNotification = await Notification.create({
+          const newNotification = await db.Notification.create({
             userId: assignedTo,
             message: `You have been assigned a new task: "${title}"`,
             type: 'task_assigned', // Use 'task_assigned' as defined in your model
@@ -131,12 +128,12 @@ export const getTasks = async (req: CustomRequest, res: Response): Promise<void>
       whereClause.projectId = projectId as string;
     }
 
-    const tasks = await Task.findAll({
+    const tasks = await db.Task.findAll({
       where: whereClause, 
       include: [
-        { model: Project, as: 'project', attributes: ['id', 'name', 'status'] },
-        { model: User, as: 'assignee', attributes: userAttributes },
-        { model: User, as: 'reporter', attributes: userAttributes },
+        { model: db.Project, as: 'project', attributes: ['id', 'name', 'status'] },
+        { model: db.User, as: 'assignee', attributes: userAttributes },
+        { model: db.User, as: 'reporter', attributes: userAttributes },
       ],
       order: [['createdAt', 'DESC']],
     });
@@ -156,11 +153,11 @@ export const getTasks = async (req: CustomRequest, res: Response): Promise<void>
 // @access  Private (Any authenticated user)
 export const getTaskById = async (req: CustomRequest, res: Response): Promise<void> => {
   try {
-    const task = await Task.findByPk(req.params.id, {
+    const task = await db.Task.findByPk(req.params.id, {
       include: [
-        { model: Project, as: 'project', attributes: ['id', 'name', 'status'] },
-        { model: User, as: 'assignee', attributes: userAttributes },
-        { model: User, as: 'reporter', attributes: userAttributes },
+        { model: db.Project, as: 'project', attributes: ['id', 'name', 'status'] },
+        { model: db.User, as: 'assignee', attributes: userAttributes },
+        { model: db.User, as: 'reporter', attributes: userAttributes },
       ],
     });
 
@@ -188,10 +185,10 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
       return;
     }
 
-    const task = await Task.findByPk(id, {
+    const task = await db.Task.findByPk(id, {
       include: [
-        { model: User, as: 'assignee', attributes: userAttributes },
-        { model: User, as: 'reporter', attributes: userAttributes },
+        { model: db.User, as: 'assignee', attributes: userAttributes },
+        { model: db.User, as: 'reporter', attributes: userAttributes },
       ],
     });
     
@@ -235,7 +232,7 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
     }
 
     if (projectId && projectId !== task.projectId) {
-      const newProject = await Project.findByPk(projectId);
+      const newProject = await db.Project.findByPk(projectId);
       if (!newProject) {
         res.status(404).json({ message: 'New project not found.' });
         return;
@@ -243,7 +240,7 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
     }
 
     if (assignedTo && assignedTo !== task.assignedTo) {
-      const newAssignee = await User.findByPk(assignedTo);
+      const newAssignee = await db.User.findByPk(assignedTo);
       if (!newAssignee) {
         res.status(404).json({ message: 'New assigned user not found.' });
         return;
@@ -272,11 +269,11 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
     }
     console.log(`Invalidated all tasks cache and relevant project tasks caches.`);
 
-    const updatedTaskWithAssociations = await Task.findByPk(task.id, {
+    const updatedTaskWithAssociations = await db.Task.findByPk(task.id, {
         include: [
-            { model: Project, as: 'project', attributes: ['id', 'name', 'status'] },
-            { model: User, as: 'assignee', attributes: userAttributes },
-            { model: User, as: 'reporter', attributes: userAttributes },
+            { model: db.Project, as: 'project', attributes: ['id', 'name', 'status'] },
+            { model: db.User, as: 'assignee', attributes: userAttributes },
+            { model: db.User, as: 'reporter', attributes: userAttributes },
         ],
     });
 
@@ -295,7 +292,7 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
 
         // 1. Task assignment change notification
         if (assignedTo && assignedTo !== oldAssignedTo && assignedTo !== currentUserId) {
-          const newNotification = await Notification.create({
+          const newNotification = await db.Notification.create({
             userId: assignedTo,
             message: `You have been assigned to task: "${updatedTaskWithAssociations.title}"`,
             type: 'task_assigned',
@@ -319,7 +316,7 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
 
         // 2. Notify reporter if task is completed and reporter is not the one making the change
         if (status === 'Done' && oldStatus !== 'Done' && task.reportedBy && task.reportedBy !== currentUserId) {
-          const newNotification = await Notification.create({
+          const newNotification = await db.Notification.create({
             userId: task.reportedBy,
             message: `Task "${updatedTaskWithAssociations.title}" has been completed.`,
             type: 'task_updated',
@@ -342,7 +339,7 @@ export const updateTask = async (req: CustomRequest, res: Response): Promise<voi
         
         // 3. Status change notification (handle other status changes)
         } else if (status && status !== oldStatus && status !== 'Done' && task.assignedTo && task.assignedTo !== currentUserId) {
-          const newNotification = await Notification.create({
+          const newNotification = await db.Notification.create({
             userId: task.assignedTo,
             message: `Task "${updatedTaskWithAssociations.title}" status changed to: ${status}`,
             type: 'task_updated',
@@ -384,10 +381,10 @@ export const deleteTask = async (req: CustomRequest, res: Response): Promise<voi
       return;
     }
 
-    const task = await Task.findByPk(id, {
+    const task = await db.Task.findByPk(id, {
       include: [
-        { model: User, as: 'assignee', attributes: userAttributes },
-        { model: User, as: 'reporter', attributes: userAttributes },
+        { model: db.User, as: 'assignee', attributes: userAttributes },
+        { model: db.User, as: 'reporter', attributes: userAttributes },
       ],
     });
     
@@ -420,7 +417,7 @@ export const deleteTask = async (req: CustomRequest, res: Response): Promise<voi
 
     // Send notification to assignee if task was assigned and assignee is not the one deleting
     if (assignedTo && assignedTo !== req.user.id) {
-      const newNotification = await Notification.create({
+      const newNotification = await db.Notification.create({
         userId: assignedTo,
         message: `Task "${taskTitle}" has been deleted.`,
         type: 'general',

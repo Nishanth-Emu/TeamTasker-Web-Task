@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import Notification from '../models/Notification'; 
+import db from '../models/index'; 
 
 interface CustomRequest extends Request {
   user?: {
@@ -18,7 +18,7 @@ export const getNotifications = async (req: CustomRequest, res: Response): Promi
       return;
     }
 
-    const notifications = await Notification.findAll({
+    const notifications = await db.Notification.findAll({
       where: { userId: req.user.id },
       order: [['createdAt', 'DESC']],
       limit: 50, // Limits to the last 50 notifications
@@ -43,7 +43,7 @@ export const markNotificationAsRead = async (req: CustomRequest, res: Response):
 
     const { id } = req.params;
 
-    const [updatedRows] = await Notification.update(
+    const [updatedRows] = await db.Notification.update(
       { isRead: true },
       {
         where: {
@@ -77,7 +77,7 @@ export const markAllNotificationsAsRead = async (req: CustomRequest, res: Respon
       return;
     }
 
-    await Notification.update(
+    await db.Notification.update(
       { isRead: true },
       {
         where: {
@@ -106,7 +106,7 @@ export const deleteNotification = async (req: CustomRequest, res: Response): Pro
 
     const { id } = req.params;
 
-    const deletedRows = await Notification.destroy({
+    const deletedRows = await db.Notification.destroy({
       where: {
         id: id,
         userId: req.user.id, // Ensure only the owner can delete their notification

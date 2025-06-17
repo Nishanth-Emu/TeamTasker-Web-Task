@@ -1,19 +1,24 @@
-import { DataTypes, Model, Optional } from 'sequelize';
-import sequelize from '../config/database'; 
+import { DataTypes, Model, Optional, Sequelize } from 'sequelize';
 
+/**
+ * Interface representing the attributes of a User.
+ */
 interface UserAttributes {
-  id: string; 
+  id: string;
   username: string;
   email: string;
-  passwordHash: string; 
+  passwordHash: string;
   role: 'Admin' | 'Project Manager' | 'Developer' | 'Tester' | 'Viewer';
-  createdAt?: Date;
-  updatedAt?: Date;
 }
 
-interface UserCreationAttributes extends Optional<UserAttributes, 'id' | 'createdAt' | 'updatedAt'> {}
+/**
+ * Interface representing the attributes for creating a User, where 'id' is optional.
+ */
+interface UserCreationAttributes extends Optional<UserAttributes, 'id'> {}
 
-// Define the User model class
+/**
+ * Represents the User model, extending Sequelize's Model class.
+ */
 class User extends Model<UserAttributes, UserCreationAttributes> implements UserAttributes {
   public id!: string;
   public username!: string;
@@ -21,49 +26,62 @@ class User extends Model<UserAttributes, UserCreationAttributes> implements User
   public passwordHash!: string;
   public role!: 'Admin' | 'Project Manager' | 'Developer' | 'Tester' | 'Viewer';
 
-  // timestamps!
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
+
+  /**
+   * Defines associations with other models.
+   * This method is typically called after all models have been initialized.
+   * @param models An object containing all initialized Sequelize models.
+   */
+  public static associate(models: any) {
+    // Example: User.hasMany(models.Project, { foreignKey: 'userId' });
+  }
 }
 
-// Initialize the User model  
-User.init(
-  {
-    id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4, // Auto-generate UUIDs
-      primaryKey: true,
-      allowNull: false,
-    },
-    username: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      unique: true, // Usernames must be unique
-    },
-    email: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      unique: true, // Emails must be unique
-      validate: {
-        isEmail: true, // Basic email format validation
+/**
+ * Initializes the User model with the provided Sequelize instance.
+ * @param sequelize The Sequelize instance to associate with the model.
+ * @returns The initialized User model.
+ */
+export default (sequelize: Sequelize): typeof User => {
+  User.init(
+    {
+      id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true,
+        allowNull: false,
+      },
+      username: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        unique: true,
+      },
+      email: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        unique: true,
+        validate: {
+          isEmail: true,
+        },
+      },
+      passwordHash: {
+        type: DataTypes.STRING,
+        allowNull: false,
+      },
+      role: {
+        type: DataTypes.ENUM('Admin', 'Project Manager', 'Developer', 'Tester', 'Viewer'),
+        allowNull: false,
+        defaultValue: 'Viewer',
       },
     },
-    passwordHash: {
-      type: DataTypes.STRING,
-      allowNull: false,
-    },
-    role: {
-      type: DataTypes.ENUM('Admin', 'Project Manager', 'Developer', 'Tester', 'Viewer'),
-      allowNull: false,
-      defaultValue: 'Viewer', // Default role for new users
-    },
-  },
-  {
-    sequelize, 
-    tableName: 'users', 
-    timestamps: true, 
-    // modelName: 'User', 
-  }
-);
+    {
+      sequelize,
+      tableName: 'users',
+      timestamps: true,
+    }
+  );
 
-export default User;
+  return User;
+};

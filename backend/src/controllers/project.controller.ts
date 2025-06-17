@@ -1,8 +1,7 @@
 import { Request, Response } from 'express';
-import Project from '../models/Project';
-import User from '../models/User'; 
+import db from '../models/index'; 
 import { io } from '../index';
-import { redisClient, REDIS_CACHE_TTL } from '../config/redis';
+import { redisClient, REDIS_CACHE_TTL } from '../index';
 import { Op } from 'sequelize';
 
 interface CustomRequest extends Request {
@@ -61,16 +60,16 @@ export const getProjects = async (req: CustomRequest, res: Response): Promise<vo
     // Special handling for sorting by creator username
     let orderClause: any;
     if (sortField === 'creator') {
-      orderClause = [[{ model: User, as: 'creator' }, 'username', order.toUpperCase()]];
+      orderClause = [[{ model: db.User, as: 'creator' }, 'username', order.toUpperCase()]];
     } else {
       orderClause = [[sortField, order.toUpperCase()]];
     }
 
     // Fetch from database with filters and sorting
-    const projects = await Project.findAll({
+    const projects = await db.Project.findAll({
       where: whereClause,
       include: [{ 
-        model: User, 
+        model: db.User, 
         as: 'creator', 
         attributes: userAttributes,
         required: false // LEFT JOIN instead of INNER JOIN
@@ -100,7 +99,7 @@ const invalidateProjectCache = async (): Promise<void> => {
     if (keys.length > 0) {
       // Use pipeline for better performance with multiple deletions
       const pipeline = redisClient.pipeline();
-      keys.forEach(key => pipeline.del(key));
+      keys.forEach((key: any) => pipeline.del(key));
       await pipeline.exec();
       console.log(`Invalidated ${keys.length} project cache keys using pipeline.`);
     }
@@ -130,7 +129,7 @@ export const createProject = async (req: CustomRequest, res: Response): Promise<
       return;
     }
 
-    const project = await Project.create({
+    const project = await db.Project.create({
       name: name.trim(),
       description: description?.trim() || '',
       status: status || 'Not Started',
@@ -138,8 +137,8 @@ export const createProject = async (req: CustomRequest, res: Response): Promise<
     });
 
     // Fetch the created project with creator info for consistent response
-    const createdProject = await Project.findByPk(project.id, {
-      include: [{ model: User, as: 'creator', attributes: userAttributes }]
+    const createdProject = await db.Project.findByPk(project.id, {
+      include: [{ model: db.User, as: 'creator', attributes: userAttributes }]
     });
 
     // Invalidate all project-related cache
@@ -172,8 +171,8 @@ export const updateProject = async (req: CustomRequest, res: Response): Promise<
       return;
     }
 
-    const project = await Project.findByPk(id, {
-      include: [{ model: User, as: 'creator', attributes: userAttributes }]
+    const project = await db.Project.findByPk(id, {
+      include: [{ model: db.User, as: 'creator', attributes: userAttributes }]
     });
 
     if (!project) {
@@ -202,7 +201,7 @@ export const updateProject = async (req: CustomRequest, res: Response): Promise<
 
     // Reload to get updated data
     await project.reload({
-      include: [{ model: User, as: 'creator', attributes: userAttributes }]
+      include: [{ model: db.User, as: 'creator', attributes: userAttributes }]
     });
 
     // Invalidate all project-related cache
@@ -234,7 +233,7 @@ export const deleteProject = async (req: CustomRequest, res: Response): Promise<
       return;
     }
 
-    const project = await Project.findByPk(id);
+    const project = await db.Project.findByPk(id);
     if (!project) {
       res.status(404).json({ message: 'Project not found.' });
       return;
@@ -276,8 +275,8 @@ export const getProjectById = async (req: CustomRequest, res: Response): Promise
       return;
     }
 
-    const project = await Project.findByPk(id, {
-      include: [{ model: User, as: 'creator', attributes: userAttributes }],
+    const project = await db.Project.findByPk(id, {
+      include: [{ model: db.User, as: 'creator', attributes: userAttributes }],
     });
 
     if (!project) {

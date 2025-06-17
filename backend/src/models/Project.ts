@@ -1,20 +1,17 @@
-import { DataTypes, Model, Optional } from 'sequelize';
-import sequelize from '../config/database';
-import User from './User'; 
+import { DataTypes, Model, Optional, Sequelize } from 'sequelize';
 
-// Define the attributes that are required for creating a Project instance
+// Keep the interfaces for type safety
 interface ProjectAttributes {
   id: string;
   name: string;
   description?: string;
   status: 'Not Started' | 'In Progress' | 'Completed' | 'On Hold' | 'Cancelled';
-  createdBy: string; // Foreign key to User ID
-  createdAt?: Date;
-  updatedAt?: Date;
+  createdBy: string;
 }
 
-interface ProjectCreationAttributes extends Optional<ProjectAttributes, 'id' | 'description' | 'status' | 'createdAt' | 'updatedAt'> {}
+interface ProjectCreationAttributes extends Optional<ProjectAttributes, 'id' | 'description' | 'status'> {}
 
+// The class definition itself remains the same
 class Project extends Model<ProjectAttributes, ProjectCreationAttributes> implements ProjectAttributes {
   public id!: string;
   public name!: string;
@@ -22,52 +19,66 @@ class Project extends Model<ProjectAttributes, ProjectCreationAttributes> implem
   public status!: 'Not Started' | 'In Progress' | 'Completed' | 'On Hold' | 'Cancelled';
   public createdBy!: string;
 
-  // timestamps!
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
+
+  /**
+   * Helper method for defining associations.
+   * This method is not part of Sequelize lifecycle.
+   * The `models/index` file will call this method automatically.
+   */
+  public static associate(models: any) {
+    // A Project belongs to the User who created it.
+    Project.belongsTo(models.User, { foreignKey: 'createdBy', as: 'creator' });
+    // A Project can have many Tasks.
+    Project.hasMany(models.Task, { foreignKey: 'projectId', as: 'tasks' });
+  }
 }
 
-// Initialize the Project model
-Project.init(
-  {
-    id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      primaryKey: true,
-      allowNull: false,
-    },
-    name: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      unique: true, // Project names should be unique for easy identification
-    },
-    description: {
-      type: DataTypes.TEXT, // Use TEXT for potentially longer descriptions
-      allowNull: true,
-    },
-    status: {
-      type: DataTypes.ENUM('Not Started', 'In Progress', 'Completed', 'On Hold', 'Cancelled'),
-      allowNull: false,
-      defaultValue: 'Not Started',
-    },
-    createdBy: {
-      type: DataTypes.UUID,
-      allowNull: false,
-      references: { // Define foreign key relationship
-        model: User, // Refers to the User model
-        key: 'id',   // Uses the 'id' column of the User model
+/**
+ * Exports a function that defines the Project model.
+ * This function will be called by the central model initializer (`src/models/index.ts`).
+ * @param sequelize The Sequelize instance to attach the model to.
+ * @returns The initialized Project model.
+ */
+export default (sequelize: Sequelize): typeof Project => {
+  Project.init(
+    {
+      id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true,
+        allowNull: false,
+      },
+      name: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        unique: true,
+      },
+      description: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      },
+      status: {
+        type: DataTypes.ENUM('Not Started', 'In Progress', 'Completed', 'On Hold', 'Cancelled'),
+        allowNull: false,
+        defaultValue: 'Not Started',
+      },
+      createdBy: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+          model: 'users', // Table name as a string
+          key: 'id',
+        },
       },
     },
-  },
-  {
-    sequelize,
-    tableName: 'projects', 
-    timestamps: true,
-  }
-);
+    {
+      sequelize,      // We use the passed-in sequelize instance
+      tableName: 'projects',
+      timestamps: true,
+    }
+  );
 
-// Define Associations: A Project belongs to a User (who created it)
-Project.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
-User.hasMany(Project, { foreignKey: 'createdBy', as: 'projects' });
-
-export default Project;
+  return Project;
+};

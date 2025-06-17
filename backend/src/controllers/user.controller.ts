@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { Op } from 'sequelize';
-import User from '../models/User'; 
+import db from '../models/index'; 
 
 // Extend the Request interface to include the user property from your auth middleware
 interface CustomRequest extends Request {
@@ -20,7 +20,7 @@ export const getMe = async (req: CustomRequest, res: Response): Promise<void> =>
       res.status(401).json({ message: 'User not authenticated.' });
       return;
     }
-    const user = await User.findByPk(req.user.id, {
+    const user = await db.User.findByPk(req.user.id, {
       attributes: { exclude: ['passwordHash'] }
     });
     if (!user) {
@@ -39,7 +39,7 @@ export const getMe = async (req: CustomRequest, res: Response): Promise<void> =>
 // @access  Private (Admin and Project Manager only)
 export const getAllUsers = async (req: CustomRequest, res: Response): Promise<void> => {
   try {
-    const users = await User.findAll({
+    const users = await db.User.findAll({
       attributes: { exclude: ['passwordHash'] },
       order: [['createdAt', 'DESC']]
     });
@@ -55,7 +55,7 @@ export const getAllUsers = async (req: CustomRequest, res: Response): Promise<vo
 // @access  Private (Admin, Project Manager, Developer, Tester)
 export const getUsersForAssignment = async (req: CustomRequest, res: Response): Promise<void> => {
   try {
-    const users = await User.findAll({
+    const users = await db.User.findAll({
       attributes: ['id', 'username'],
       where: {
         role: {
@@ -91,7 +91,7 @@ export const createUser = async (req: CustomRequest, res: Response): Promise<voi
     }
 
     // Check if user already exists
-    const existingUser = await User.findOne({
+    const existingUser = await db.User.findOne({
       where: {
         [Op.or]: [{ email }, { username }]
       }
@@ -109,7 +109,7 @@ export const createUser = async (req: CustomRequest, res: Response): Promise<voi
     const passwordHash = await bcrypt.hash(password, saltRounds);
 
     // Create user
-    const newUser = await User.create({
+    const newUser = await db.User.create({
       username,
       email,
       passwordHash,
@@ -143,7 +143,7 @@ export const getUserById = async (req: CustomRequest, res: Response): Promise<vo
   try {
     const { id } = req.params;
 
-    const user = await User.findByPk(id, {
+    const user = await db.User.findByPk(id, {
       attributes: { exclude: ['passwordHash'] }
     });
 
@@ -168,7 +168,7 @@ export const updateUser = async (req: CustomRequest, res: Response): Promise<voi
     const { username, email, password, role } = req.body;
 
     // Check if user exists
-    const user = await User.findByPk(id);
+    const user = await db.User.findByPk(id);
     if (!user) {
       res.status(404).json({ message: 'User not found.' });
       return;
@@ -203,7 +203,7 @@ export const updateUser = async (req: CustomRequest, res: Response): Promise<voi
 
     if (username && username !== user.username) {
       // Check if username is already taken
-      const existingUser = await User.findOne({ where: { username, id: { [Op.ne]: id } } });
+      const existingUser = await db.User.findOne({ where: { username, id: { [Op.ne]: id } } });
       if (existingUser) {
         res.status(400).json({ message: 'Username already exists.' });
         return;
@@ -213,7 +213,7 @@ export const updateUser = async (req: CustomRequest, res: Response): Promise<voi
 
     if (email && email !== user.email) {
       // Check if email is already taken
-      const existingUser = await User.findOne({ where: { email, id: { [Op.ne]: id } } });
+      const existingUser = await db.User.findOne({ where: { email, id: { [Op.ne]: id } } });
       if (existingUser) {
         res.status(400).json({ message: 'Email already exists.' });
         return;
@@ -237,7 +237,7 @@ export const updateUser = async (req: CustomRequest, res: Response): Promise<voi
     }
 
     // Return updated user without password hash
-    const updatedUser = await User.findByPk(id, {
+    const updatedUser = await db.User.findByPk(id, {
       attributes: { exclude: ['passwordHash'] }
     });
 
@@ -264,7 +264,7 @@ export const deleteUser = async (req: CustomRequest, res: Response): Promise<voi
       return;
     }
 
-    const user = await User.findByPk(id);
+    const user = await db.User.findByPk(id);
     if (!user) {
       res.status(404).json({ message: 'User not found.' });
       return;
